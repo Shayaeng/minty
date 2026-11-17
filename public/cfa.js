@@ -109,7 +109,7 @@
     const most = Math.max(0, ...count.values());
     const firstData = data.months.find(m => most && count.get(m) >= Math.max(5, most * 0.4)) ?? null;
     const all = firstData ? data.months.filter(m => m >= firstData) : data.months;    // the charts start there too
-    const full = all.filter(m => m !== thisMonth);                                    // whole months, for averages
+    const full = firstData ? all.filter(m => m !== thisMonth) : [];                                    // whole months, for averages
     const sum = (ms, k) => ms.reduce((s, m) => s + by.get(m)[k], 0);
     let html = `<div class="cfa-top">
       ${users.length > 1 ? `<select id="cfaOwner" aria-label="Person"><option value="">Everyone</option>${users.map(u => `<option value="${esc(u.key)}"${u.key === owner ? " selected" : ""}>${esc(u.label)}</option>`).join("")}</select>` : ""}
@@ -118,15 +118,11 @@
       <span class="cfa-when">${data.refreshed_at ? `Totals as of ${esc(new Date(data.refreshed_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}` : ""}${data.pending_rebuild ? " · a change is being applied (within about 10 minutes)" : ""}</span>
       ${data.rebuild_error ? `<p class="abc-msg abc-err">The totals couldn't be rebuilt at the last run, so they may be out of date (${esc(data.rebuild_error)}). Minty tries again every 10 minutes.</p>` : ""}
     </div>`;
-    if (!firstData) {
-      main.innerHTML = html + `<p class="abc-msg">The audit fills in after the next hourly sync: it adds up your transactions by month, then shows them here.</p>`;
-      return;
-    }
-
     html += `<p class="cfa-printed">Complete financial audit${owner ? ` · ${esc(users.find(u => u.key === owner)?.label ?? owner)}` : ""} · ${esc(dayYear(data.today))}</p>`;
-    html += statsHtml(by, full);
+    if (firstData) html += statsHtml(by, full);
     html += adviceHtml();
 
+    if (firstData) {
     // 1. Cash flow
     const inc = sum(full, "income"), sp = sum(full, "spend"), sv = sum(full, "saving"), dt = sum(full, "debt");
     const kept = inc - sp - dt, rate = inc > 0 ? kept / inc : null;
@@ -189,6 +185,9 @@
        rec.filter(r => r.rise && !r.ended).map(r => `${esc(r.name || r.merchant)} went up ${pct(r.last_cents / r.prev_cents - 1)}.`).join(" ") || null,
        "A deposit to an account Minty doesn't see (a brokerage, a 401(k)) shows here as spending: set it to Saving, and the audit counts it as saving."]);
 
+    } else {
+      for (const title of ["Cash flow", "Spending by category", "Recurring charges"]) html += section(title, `<p class="cfa-muted">Transaction history is needed to show this section.</p>`, []);
+    }
     // 4. Fees, interest and debt
     const fees = sum(full, "fees"), debtSeries = [{ name: "Fees & interest", cls: "fees", values: all.map(m => by.get(m).fees) },
                                                  { name: "Loan payments", cls: "debt", values: all.map(m => by.get(m).debt) }];
@@ -196,7 +195,7 @@
     const anyDebt = debtSeries.some(s => s.values.some(v => v));
     html += section("Fees, interest and debt", (anyDebt ? C().legend(debtSeries) + C().bars({ labels: all, series: debtSeries, width: width(), height: 160, fmt: short, short: monLabel }) : "") +
       (data.cards.length ? `<div class="cfa-cards">${data.cards.filter(c => (c.balance ?? 0) > 0).sort((a, b) => b.balance - a.balance).map(c => `<span>${esc(c.name || "Card")}${c.mask ? ` ••${esc(c.mask)}` : ""} <b>${money(c.balance)}</b></span>`).join("")}</div>` : ""),
-      [fees > 0 ? `You paid <b>${money(fees)}</b> in ${(full.length ? catLink("fees and interest", ["BANK_FEES", "INTEREST"], `${full[0]}-01`, lastDay(full.at(-1)), `Fees and interest · ${spanLabel(`${full[0]}-01`, lastDay(full.at(-1)))}`) : "fees and interest")} over ${full.length} months (annual fees included). Card interest is usually the one worth ending first: paying off the highest-rate balance first saves the most.${full.length ? ctBox() : ""}` : "No fees or interest charged in this period.",
+      [fees > 0 ? `You paid <b>${money(fees)}</b> in ${(full.length ? catLink("fees and interest", ["BANK_FEES", "INTEREST"], `${full[0]}-01`, lastDay(full.at(-1)), `Fees and interest · ${spanLabel(`${full[0]}-01`, lastDay(full.at(-1)))}`) : "fees and interest")} over ${full.length} months (annual fees included). Card interest is usually the one worth ending first: paying off the highest-rate balance first saves the most.${full.length ? ctBox() : ""}` : firstData ? "No fees or interest charged in this period." : "Transaction history is needed to show fees and interest.",
        owed ? `Cards owe ${money(owed)} today. Paid in full by each due date, that costs nothing.` : null]);
 
     // 5. Net worth
@@ -208,11 +207,11 @@
       const ch = series[0].values.at(-1) - series[0].values[0];
       html += section("Net worth", C().legend(series) + C().lines({ labels: ds, series, width: width(), fmt: short, short: dayLabel, gap: 72 }),
         [`Net worth is <b>${money(series[0].values.at(-1))}</b>, ${ch >= 0 ? "up" : "down"} ${money(Math.abs(ch))} since ${dayYear(ds[0])}.`,
-         "It counts bank and investment accounts Minty sees, less what cards and loans owe; homes, cars and accounts not linked aren't in it."]);
+         "It counts bank and investment accounts Minty sees, less what cards and loans owe; homes, cars and accounts not added aren't in it."]);
     } else {
       const now = nw[0];
       html += section("Net worth", `<p class="cfa-big">${now ? money(now.assets - now.debts) : "—"}</p>`,
-        [now ? `History starts ${dayYear(now.date)}: the line fills in day by day from here.` : "It starts with the next hourly sync."]);
+        [now ? `History starts ${dayYear(now.date)}: the line fills in day by day from here.` : "Add an account balance to start tracking net worth."]);
     }
 
     html += checklistHtml();
