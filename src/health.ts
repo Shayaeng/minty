@@ -204,5 +204,5 @@ export function syncHealth(env: Env, config: Config, rows: BankRow[], now = Date
 }
 
 export async function bankRows(env: Env): Promise<BankRow[]> {
-  return (await env.DB.prepare(`${BANK_ROWS_SQL} ORDER BY i.owner, i.id`).all<BankRow>()).results;
+  return (await env.DB.prepare(`${BANK_ROWS_SQL} WHERE i.status != 'manual' ORDER BY i.owner, i.id`).all<BankRow>()).results;
 }
