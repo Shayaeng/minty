@@ -11,7 +11,7 @@ import { tokenKeys } from "../token-key";
  * every API route; reports only whether things are set, never values. */
 
 /** Must list every file in d1/migrations (a test checks this). */
-export const EXPECTED_MIGRATIONS = ["0001_init.sql", "0002_sync_pages.sql", "0003_account_owner.sql", "0004_sync_restart.sql", "0005_bank_health.sql", "0006_card_benefits.sql", "0007_read_indexes.sql", "0008_app_state.sql", "0009_link_sessions.sql", "0010_card_statements.sql", "0011_bills.sql", "0012_point_balances.sql", "0013_audit.sql", "0014_audit_views.sql", "0015_investments.sql", "0016_statement_marks.sql", "0017_account_names.sql", "0018_statement_estimated.sql", "0019_analytics_exclusions.sql", "0020_txn_category_index.sql", "0021_manual_accounts.sql", "0022_account_people.sql"];
+export const EXPECTED_MIGRATIONS = ["0001_init.sql", "0002_sync_pages.sql", "0003_account_owner.sql", "0004_sync_restart.sql", "0005_bank_health.sql", "0006_card_benefits.sql", "0007_read_indexes.sql", "0008_app_state.sql", "0009_link_sessions.sql", "0010_card_statements.sql", "0011_bills.sql", "0012_point_balances.sql", "0013_audit.sql", "0014_audit_views.sql", "0015_investments.sql", "0016_statement_marks.sql", "0017_account_names.sql", "0018_statement_estimated.sql", "0019_analytics_exclusions.sql", "0020_txn_category_index.sql", "0021_manual_accounts.sql", "0022_account_people.sql", "0023_household_people.sql"];
 
 interface Check { id: string; ok: boolean; level: "error" | "warn"; message: string; fix?: string }
 
@@ -66,7 +66,7 @@ export async function status(env: Env, config: Config, email: string): Promise<R
   add((await tokenKeyWorks(env.TOKEN_ENC_KEY))
     ? { id: "token_key", ok: true, level: "error", message: "TOKEN_ENC_KEY is set." }
     : { id: "token_key", ok: false, level: "error", message: "TOKEN_ENC_KEY is missing or not a valid key, so banks can't be linked.",
-        fix: "Add a secret TOKEN_ENC_KEY. No terminal needed: \"Make an encryption key\" on + Add user generates one on this device; " +
+        fix: "Add a secret TOKEN_ENC_KEY. No terminal needed: \"Make an encryption key\" under Connections & setup generates one on this device; " +
              "save it in your password manager, then in Cloudflare (Variables and secrets → + Add, type Secret) paste it as TOKEN_ENC_KEY and Deploy. " +
              "(Or in a terminal: openssl rand -base64 32 | tr '+/' '-_')" });
 
@@ -151,10 +151,9 @@ export async function status(env: Env, config: Config, email: string): Promise<R
     .map((k) => /^PLAID_(?:CLIENT_ID|SECRET)_([A-Z][A-Z0-9]*)_[A-Z0-9]+$/.exec(k)?.[1])
     .filter((k): k is string => !!k && !known.has(k)))];
   if (orphans.length) {
-    const example = [...[...config.users].map(([k, l]) => `${k}:${l}`), ...orphans.map((o) => `${o.toLowerCase()}:Name`)].join(",");
     add({ id: "keys_unused", ok: false, level: "warn",
-          message: `Plaid keys are set for ${orphans.join(", ")}, who ${orphans.length === 1 ? "isn't" : "aren't"} in MINTY_USERS, so they aren't used.`,
-          fix: `To add ${orphans.length === 1 ? "them" : "those people"}, set MINTY_USERS to e.g. ${example}. Otherwise delete those secrets.` });
+          message: `Plaid keys are set for ${orphans.join(", ")}, who ${orphans.length === 1 ? "isn't" : "aren't"} in Minty household people, so they aren't used.`,
+          fix: "Manage people in Minty. Use the immutable person IDs shown there for Plaid secret names; remove obsolete secrets in Cloudflare." });
   }
 
   // Banks whose credential set is gone (person removed from MINTY_USERS, slot removed from
@@ -166,7 +165,7 @@ export async function status(env: Env, config: Config, email: string): Promise<R
   if (stranded.length) {
     const total = stranded.reduce((t, r) => t + r.n, 0);
     const why = stranded.map((r) => `${r.plaid_account} (${config.accountOwner.has(r.plaid_account)
-      ? "no keys" : "not in MINTY_USERS / PLAID_SLOTS"})`).join(", ");
+      ? "no keys" : "not in household people / PLAID_SLOTS"})`).join(", ");
     add({ id: "items_stranded", ok: false, level: "error", message: `${total} bank(s) can't sync: ${why}.`,
           fix: "Restore that person / slot and its keys. Banks stay with the Plaid account they were linked under." });
   }

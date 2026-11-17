@@ -11,7 +11,7 @@ const fetchText = async (path: string) => (await SELF.fetch(`https://minty.examp
 // script-src 'self'). The assertions below are about what a page contains, so `html` is the page
 // with those scripts put back where their <script src> tags are, exactly as it was. Only these
 // four: other scripts (lock.js, abc.js) were always separate files, and still aren't included.
-export const MOVED_SCRIPTS = ["/theme.js", "/app.js", "/connect.js", "/add-user.js"];
+export const MOVED_SCRIPTS = ["/theme.js", "/app.js", "/connect.js", "/add-user.js", "/connections-setup.js"];
 
 const page = async (path: string) => {
   const r = await SELF.fetch(`https://minty.example.workers.dev${path}`);
@@ -32,7 +32,7 @@ describe("static pages", () => {
     expect(type).toMatch(/text\/html/);
     expect(html).toContain("<title>Minty</title>");
     expect(html).toContain('href="/connect">+ Add account');
-    expect(html).toContain('href="/add-user">+ Add user');
+    expect(html).toContain('href="/add-user">Manage people');
     expect(html).not.toContain('data-owner="spouse"');            // person buttons come from /users
     expect(html).toContain("seg.hidden = false");       // Everyone remains visible for one person
     expect(html).not.toMatch(/owner:"spouse"|label: "Spouse"/);   // no built-in spouse, not even in samples
@@ -57,6 +57,7 @@ describe("static pages", () => {
     const { status, html } = await page(path);
     expect(status).toBe(200);
     expect(html).toContain('id="themeToggle"');
+    if (path === "/add-user") { expect(html).toContain('href="/accounts.css"'); return; }
     expect(html).toContain(':root[data-theme="dark"]');
     const head = html.slice(0, html.indexOf("</head>"));
     expect(head).toMatch(/<script>[^<]*minty-theme[^<]*<\/script>\s*<style>/);   // no light flash
@@ -282,7 +283,7 @@ describe("static pages", () => {
     const { html } = await page("/");
     expect(html).toContain('grid-template-areas: "brand count theme" "links links links";');
     expect(html).toContain('<a class="phoneonly" href="/connect" title="Link a bank, card or retirement account">+ Add account');
-    expect(html).toContain('<a class="phoneonly" href="/add-user" title="People, Plaid keys and Setup checks">+ Add user');
+    expect(html).toContain('<a class="phoneonly" href="/add-user" title="Manage household people">Manage people');
     expect(html).toContain(".links .addlink { display: none; }");
     // A bank's warning is one line; a tap on it shows what it means.
     expect(html).toContain(".health .hl:not(.open) .what, .health .hl:not(.open) .code { display: none; }");
@@ -334,16 +335,16 @@ describe("static pages", () => {
     expect(html).toContain("institution_name: metadata?.institution?.name");
   });
 
-  it("add-user page shows setup checks and Cloudflare instructions only", async () => {
-    const { html } = await page("/add-user");
+  it("connections setup page shows technical checks and Cloudflare instructions only", async () => {
+    const { html } = await page("/connections-setup");
     expect(html).toContain('fetch("/status")');
-    expect(html).toContain("npx wrangler secret put PLAID_CLIENT_ID_");
+    expect(html).toContain("PLAID_CLIENT_ID_");
     expect(html).toContain("Variables and secrets");
     for (const gone of ["docker", ".env", "Tailscale", "BACKEND"]) expect(html).not.toContain(gone);
   });
 
   it("add-user page makes an encryption key on the device: 32 secure random bytes, never sent or stored", async () => {
-    const { html } = await page("/add-user");
+    const { html } = await page("/connections-setup");
     const gen = html.slice(html.indexOf('$("genKey").addEventListener'), html.indexOf('$("genCopy").addEventListener'));
     expect(gen).toContain("crypto.getRandomValues(new Uint8Array(32))");
     for (const leak of ["fetch(", "localStorage", "sessionStorage", "indexedDB"]) expect(gen).not.toContain(leak);
@@ -409,7 +410,7 @@ describe("device lock (public/lock.js)", () => {
 
   it("is in the service worker's shell and shown in Setup checks", async () => {
     expect((await page("/sw.js")).html).toContain('"/lock.js", "/lock.css"');
-    const { html } = await page("/add-user");
+    const { html } = await page("/connections-setup");
     expect(html).toContain('id="lockState"');
     expect(html).toContain("MintyLock.turnOff()");
     // The live demo strips it: scripts/build-demo.mjs edit "no device lock" (the build stops if it no longer applies).
@@ -473,7 +474,7 @@ describe("security headers (docs/security-plan.md, step 4)", () => {
   it("the headers file isn't served, and every moved script is in the service worker's shell", async () => {
     expect((await raw("/_headers")).status).toBe(404);
     const sw = await (await raw("/sw.js")).text();
-    expect(sw).toContain('const CACHE = "minty-v9";');                          // installed apps refresh their copy once (v3: Bills)
+    expect(sw).toContain('const CACHE = "minty-v10";');                          // installed apps refresh their copy once (v3: Bills)
     for (const src of MOVED_SCRIPTS) expect(sw, src).toContain(`"${src}"`);
   });
 });

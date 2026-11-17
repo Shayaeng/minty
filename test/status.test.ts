@@ -6,6 +6,8 @@ import { call, getJson } from "./helpers";
 const byId = (checks: any[]) => Object.fromEntries(checks.map((c) => [c.id, c]));
 
 beforeEach(async () => {
+  await env.DB.prepare("DELETE FROM household_people").run();
+  await env.DB.prepare("DELETE FROM app_state WHERE key='people_imported'").run();
   await env.DB.batch(["transaction_tags", "transactions", "accounts", "items"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
 });
 
@@ -59,7 +61,7 @@ describe("GET /status", () => {
     const c = byId((await getJson("/status")).body.checks);
     expect(c.items_stranded).toMatchObject({ ok: false, level: "error" });
     expect(c.items_stranded.message).toMatch(/^3 bank\(s\) can't sync/);
-    expect(c.items_stranded.message).toContain("me_extra1 (not in MINTY_USERS / PLAID_SLOTS)");
+    expect(c.items_stranded.message).toContain("me_extra1 (not in household people / PLAID_SLOTS)");
     expect(c.items_stranded.message).toContain("spouse_backup (no keys)");
     expect(c.items_stranded.message).not.toContain("me_primary");
   });
@@ -102,12 +104,16 @@ describe("GET /status", () => {
     const r = await getJson("/status", { envOverrides: { MINTY_USERS: "me:Alex" } });
     const c = byId(r.body.checks);
     expect(c.keys_unused).toMatchObject({ ok: false, level: "warn",
-      message: "Plaid keys are set for SPOUSE, who isn't in MINTY_USERS, so they aren't used.",
-      fix: expect.stringContaining("me:Alex,spouse:Name") });
+      message: "Plaid keys are set for SPOUSE, who isn't in Minty household people, so they aren't used.",
+      fix: expect.stringContaining("Manage people in Minty") });
     expect(JSON.stringify(r.body)).not.toMatch(/secret_|cid_/);
-    // everyone with keys is configured: no warning (the default test setup)
+    // A later Cloudflare change cannot replace D1 people. Reset only this test fixture.
+    await env.DB.prepare("DELETE FROM app_state WHERE key='people_imported'").run();
+    await env.DB.prepare("DELETE FROM household_people").run();
     expect(byId((await getJson("/status")).body.checks).keys_unused).toBeUndefined();
     // blank secrets don't count as set
+    await env.DB.prepare("DELETE FROM app_state WHERE key='people_imported'").run();
+    await env.DB.prepare("DELETE FROM household_people").run();
     const blank = await getJson("/status", { envOverrides: { MINTY_USERS: "me:Alex", PLAID_CLIENT_ID_SPOUSE_PRIMARY: "", PLAID_SECRET_SPOUSE_PRIMARY: "" } });
     expect(byId(blank.body.checks).keys_unused).toBeUndefined();
   });

@@ -9,6 +9,9 @@ secrets/
 node_modules/
 worker-configuration.d.ts
 dist/
+.wrangler-household-e2e.jsonc
+test-results/
+playwright-report/
 
 # Household-specific notes: a private repo checked out here (docs/security-plan.md, finding 7)
 docs/private/

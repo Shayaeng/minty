@@ -48,8 +48,8 @@ More detail on any step: [SETUP.md](SETUP.md).
 
 ## 5. Add your keys
 
-1. **Encryption key.** No terminal needed: open your Minty address with `/add-user` on the end
-   (for example `https://minty.<you>.workers.dev/add-user`), sign in, and click **Make an
+1. **Encryption key.** No terminal needed: open your Minty address with `/connections-setup` on the end
+   (for example `https://minty.<you>.workers.dev/connections-setup`), sign in, and click **Make an
    encryption key → Generate a key**. It's made on your device and never sent anywhere. Or make
    one on your computer as below.
 
@@ -79,7 +79,7 @@ More detail on any step: [SETUP.md](SETUP.md).
 
 1. Open your Minty address and sign in with your email (you'll get a one-time code). On a phone,
    Minty then offers to lock itself with Face ID or your fingerprint.
-2. Click **+ Add user**: every line under **Setup checks** should show ✓. Each one that doesn't
+2. Click **Connections & setup**: every line under **Setup checks** should show ✓. Each one that doesn't
    says how to fix it.
 3. Click **+ Add account → Connect with Plaid**, and sign in to your bank in Plaid's window.
    Transactions start arriving within a minute.
@@ -97,8 +97,8 @@ Cloudflare redeploys it. Your data and settings stay.
 
 ## Later
 
-- **Your name, or more people:** **+ Add user**.
-- **Stuck?** Check **+ Add user → Setup checks**, then [SETUP.md](SETUP.md).
+- **Your name, or more people:** **Manage people** (saved in Minty; no Cloudflare changes needed).
+- **Stuck?** Check **Connections & setup → Setup checks**, then [SETUP.md](SETUP.md).
 - **License:** use Minty unmodified, for personal or household use only: no changes, no
   redistribution, no commercial use. See [LICENSE](LICENSE).
 

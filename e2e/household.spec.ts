@@ -1,0 +1,108 @@
+import { expect, test } from '@playwright/test';
+
+test('people and all manual account types work without Plaid, survive refresh and navigate on mobile', async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => localStorage.setItem('minty_lock', JSON.stringify({ state: 'off' })));
+  await page.goto('/account-overview');
+  await expect(page.locator('#accountStatus')).toBeEmpty();
+  await page.getByRole('link', { name: 'Manage people', exact: true }).first().click();
+  const suffix = Date.now().toString();
+  for (const name of [`Parent ${suffix}`, `Child ${suffix}`]) {
+    await page.locator('#newLabel').fill(name);
+    await page.getByRole('button', { name: 'Add person', exact: true }).click();
+    await expect(page.locator('#peopleList input').filter({ visible: true }).last()).toHaveValue(name);
+  }
+  const people = await (await request.get('/people')).json();
+  expect((await (await request.get('/users')).json()).every((p:any)=>p.slots.every((s:any)=>!s.configured))).toBe(true);
+  const parent = people.find((p: any) => p.label === `Parent ${suffix}`);
+  const child = people.find((p: any) => p.label === `Child ${suffix}`);
+  const types = ['checking','savings','cash_management','taxable_brokerage','traditional_ira','roth_ira','rollover_ira','401k','roth_401k','403b','457b','sep_ira','simple_ira','pension','hsa','529','530a','custodial','other_investment','credit_card','mortgage','other_loan','other_asset','other_liability'];
+  for (const type of types) {
+    await page.goto('/manual');
+    await expect(page.locator('#detailed_type option')).toHaveCount(24);
+    await page.locator('#owner').selectOption(parent.id);
+    await page.locator('#name').fill(`${type} ${suffix}`);
+    await page.locator('#institution_manual').fill('Test provider');
+    await page.locator('#detailed_type').selectOption(type);
+    await page.locator('#holder_ids').selectOption([parent.id]);
+    if (['529','530a','custodial'].includes(type)) {
+      await page.locator('#beneficiary_id').selectOption(child.id);
+      await page.locator('#responsible_adult_id').selectOption(parent.id);
+    }
+    await page.locator('#balance').fill('100');
+    await page.locator('#balance_as_of').fill('2025-01-15');
+    await page.locator('#mask').fill('1234');
+    await page.locator('#notes').fill('Older valuation, kept distinct from sync time.');
+    await page.locator('#login_url').fill('https://example.com/login');
+    await page.getByRole('button', { name: 'Save account', exact: true }).click();
+    await expect(page.locator('#status')).toContainText('Account saved.');
+    // Save again on the same form to verify editing never duplicates a newly added account.
+    await page.locator('#balance').fill('120');
+    await page.getByRole('button', { name: 'Save account', exact: true }).click();
+    await expect(page.locator('#list')).toContainText(`${type} ${suffix}: 120`);
+    await page.locator('#balance').fill('100');
+    await page.getByRole('button', { name: 'Save account', exact: true }).click();
+    await expect(page.locator('#list')).toContainText(`${type} ${suffix}: 100`);
+  }
+  await page.goto('/add-user');
+  const parentForm = page.locator(`form[data-person="${parent.id}"]`);
+  await parentForm.locator('input').fill(`Renamed ${suffix}`);
+  await parentForm.getByRole('button', { name: 'Save name' }).click();
+  await expect(parentForm.locator('input')).toHaveValue(`Renamed ${suffix}`);
+  await parentForm.getByRole('button', { name: 'Move up' }).click();
+  await page.goto('/account-overview');
+  await page.getByRole('button', { name: `Renamed ${suffix}`, exact: true }).click();
+  await expect(page.locator('#accountList .account-card')).toHaveCount(24);
+  await expect(page.locator('#totals')).toContainText('$1,600.00');
+  await page.getByRole('button', { name: /Checking & savings/ }).click();
+  await expect(page.locator('#accountList .account-card')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Show all accounts' }).click();
+  await page.getByRole('button', { name: `Child ${suffix}`, exact: true }).click();
+  await expect(page.locator('#accountList .account-card')).toHaveCount(3);
+  await expect(page.locator('#totals')).toContainText('$300.00');
+  await page.getByRole('button', { name: /Education & children/ }).click();
+  await expect(page.locator('#accountList .account-card')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Show all accounts' }).click();
+  const education = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: `529 ${suffix}`, exact: true }) });
+  await expect(education).toContainText('2025-01-15');
+  await education.getByRole('link', { name: /Edit balance/ }).click();
+  await expect(page.locator('#beneficiary_id')).toHaveValue(child.id);
+  await page.locator('#balance').fill('150');
+  await page.getByRole('button', { name: 'Save account', exact: true }).click();
+  await expect(page.locator('#status')).toContainText('Account saved.');
+  await page.reload();
+  await expect(page.locator('#balance')).toHaveValue('150');
+  await page.goto('/account-overview');
+  await page.getByRole('button', { name: `Child ${suffix}`, exact: true }).click();
+  await expect(page.locator('#totals')).toContainText('$350.00');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => [...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>window.innerWidth+1).map(e=>({tag:e.tagName,css:e.className,width:e.getBoundingClientRect().width})).slice(0,10))).toEqual([]);
+  await page.getByRole('link', { name: 'Transactions', exact: true }).click();
+  await expect(page.locator('#ownerSeg')).toBeVisible();
+  await page.getByRole('link', { name: 'Accounts', exact: true }).click();
+  await expect(page.locator('#accountList')).toBeVisible();
+  await page.getByRole('link', { name: 'CFA', exact: true }).click();
+  await expect(page.locator('#cfaMain')).toContainText('Net worth');
+  const accounts = await (await request.get('/accounts?view=all')).json();
+  expect(accounts.filter((a: any) => a.owner === parent.id)).toHaveLength(24);
+  expect(accounts.find((a: any) => a.name === `529 ${suffix}`)).toMatchObject({ owner: parent.id, beneficiary_id: child.id, balance_current: 150, balance_as_of: '2025-01-15' });
+  for (const path of ['/items','/investments','/statements']) expect(await (await request.get(path)).json()).toEqual([]);
+  expect(await (await request.get('/transactions')).json()).toEqual([]);
+  await page.goto('/add-user');
+  await parentForm.getByRole('button', { name: 'Archive', exact: true }).click();
+  await expect(parentForm).toContainText('Archived');
+  await page.goto('/account-overview');
+  await page.getByRole('button', { name: `Renamed ${suffix} (archived)`, exact: true }).click();
+  await expect(page.locator('#accountList .account-card')).toHaveCount(24);
+  const legacy = await (await request.post('/accounts', { data: {owner:'me',name:`Legacy ${suffix}`,type:'investment',currency:'USD',balance_cents:10000} })).json();
+  await request.put(`/accounts/${legacy.id}/people`, { data: {holder_name:'Original holder',beneficiary_name:'Original child',responsible_adult_name:'Original adult'} });
+  await page.goto(`/manual?edit=${legacy.id}`);
+  await expect(page.locator('#legacyPeople')).toContainText('Original holder');
+  await page.locator('#balance').fill('125');
+  await page.getByRole('button', { name: 'Save account', exact: true }).click();
+  await expect(page.locator('#status')).toContainText('Account saved.');
+  const retained = (await (await request.get('/accounts?view=all')).json()).find((a:any)=>a.id===legacy.id);
+  expect(retained).toMatchObject({holder_name:'Original holder',beneficiary_name:'Original child',responsible_adult_name:'Original adult',balance_current:125,detailed_type:'other_investment'});
+  expect(errors).toEqual([]);
+});

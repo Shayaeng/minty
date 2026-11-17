@@ -41,10 +41,15 @@ web browser.
   (apply D1 migrations, then deploy). GitHub Actions only runs tests.
 
 ## People and the trial overflow model
-People come from the `MINTY_USERS` variable, `key:Name` in display order. The default is one
-person, `me:Me`; with two or more (e.g. `me:Alex,sam:Sam,kim:Kim`), the dashboard shows a person
-switch: **Combined**, then each name. Each person has their own Plaid Trial credential sets, a
-**primary** and a **backup** by default (`PLAID_SLOTS`):
+People live in D1 and are managed in Minty under **Manage people**. The first authenticated
+request imports `MINTY_USERS` once, preserving IDs such as `me`; subsequent Cloudflare edits
+cannot overwrite people managed in Minty. Add, rename, reorder, archive or restore people
+without email addresses, login access or Plaid credentials. Accounts and Transactions have
+an **Everyone** view and person filters. See [Household people and manual accounts](docs/household-people.md).
+
+Plaid credentials remain optional Cloudflare secrets, named from each person's immutable ID.
+**Connections & setup** lists their names and configuration status without exposing values.
+The default slots are **primary** and **backup** (`PLAID_SLOTS`):
 
     me_primary  → me_backup   (owner: me)
     sam_primary → sam_backup  (owner: sam)
@@ -52,8 +57,7 @@ switch: **Combined**, then each name. Each person has their own Plaid Trial cred
 `owner` drives the dashboard's filtering and totals; `plaid_account` is the credential set a
 bank login is bound to. New links land on the person's primary; when it reaches
 `TRIAL_ITEM_CAP` (10) logins, the next link overflows to their backup. The connect page shows
-how full each trial is. To add someone, open **+ Add user**: it lists the `MINTY_USERS` value and
-the secret names to add in the Cloudflare dashboard.
+how full each trial is. Add people under **Manage people**; optional Plaid setup lives under **Connections & setup**.
 
 > Note: multiple Trial accounts per person to extend the free item cap is ToS gray area.
 > The clean alternative is one paid Plaid account per person (no cap). Your call.
@@ -75,16 +79,21 @@ the secret names to add in the Cloudflare dashboard.
 - **Plaid access tokens are Fernet-encrypted** with `TOKEN_ENC_KEY` before they're stored.
   Plaid keys and `TOKEN_ENC_KEY` are Worker secrets; they never reach the browser or the database.
   The key can be changed without linking banks again (SETUP, "Changing the encryption key").
-- **Setup checks** on the Add user page show what's configured, never the values.
+- **Setup checks** on the Connections & setup page show what's configured, never the values.
 - **Device lock:** on a phone or computer with Face ID, a fingerprint sensor or Windows Hello,
   Minty offers to ask for it before showing anything (`public/lock.js`). It hides the screen from
   someone holding your unlocked device; it doesn't protect the data, and never talks to the
-  Worker. Turn it off per device under Add user → This device.
+  Worker. Turn it off per device under Connections & setup → This device.
 
 ## Endpoints
     GET  /                       dashboard
     GET  /connect                link a bank/card
-    GET  /add-user               setup checks + the values to add a person
+    GET  /add-user               manage household people in D1
+    GET  /connections-setup      optional Plaid instructions + technical setup checks
+    GET  /people                 household people (immutable IDs, labels, order, archived status)
+    POST /people                 add a household person (no login access)
+    PUT  /people/{id}            rename or archive / restore
+    PUT  /people/order           reorder all people
     POST /link/token             {owner, kind?: transactions | investments} -> {link_token, plaid_account, session_id, expires_at}   (reserves a slot for 30 min)
     POST /link/exchange          {session_id, public_token}   (owner and slot come from the session; starts the first sync)
     POST /link/cancel            {session_id}   (Link closed: the reserved slot goes back)
@@ -123,7 +132,7 @@ the secret names to add in the Cloudflare dashboard.
     PUT  /transactions/{id}/tags {tags:[...]}  replace a transaction's tags
     POST /transactions/tags      {ids: [...up to 1000], add?: [...], remove?: [...]}   tag many at once (the dashboard's Select); existing tags stay
     GET  /capacity               per-person trial usage (used/cap)
-    GET  /users                  people from MINTY_USERS + which key slots are set (no secrets)
+    GET  /users                  D1 household people + which key slots are set (no secrets)
     GET  /status                 setup checks (no values)
     GET  /healthz                liveness (ungated)
 

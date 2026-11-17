@@ -35,7 +35,7 @@ export type Kind = "workplace" | "ira" | "simple" | "hsa";
 export function kindOf(subtype: string | null): Kind | null {
   const s = (subtype ?? "").toLowerCase();
   if (["401k", "403b", "457b", "roth 401k", "thrift savings plan"].includes(s)) return "workplace";
-  if (["ira", "roth"].includes(s)) return "ira";
+  if (["ira", "roth", "rollover ira"].includes(s)) return "ira";
   if (s === "simple ira") return "simple";
   if (s === "hsa") return "hsa";
   return null;                  // SEP, pension, 401(a) and others: employer-made, or other limits

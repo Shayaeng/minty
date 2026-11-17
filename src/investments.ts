@@ -1,5 +1,7 @@
+import { ACCOUNT_TYPES } from '../public/account-types.js';
+import { householdConfig } from './people';
 import type { Env } from "./env";
-import { type Config, credsFor, isConfigured, loadConfig } from "./config";
+import { type Config, credsFor, isConfigured } from "./config";
 import { FernetError } from "./fernet";
 import { openAccessToken } from "./token-key";
 import { PlaidError, plaidPostText } from "./plaid";
@@ -28,7 +30,7 @@ export const RETIREMENT_SUBTYPES = ["401a", "401k", "403b", "457b", "ira", "roth
 
 /** SQL: whether account `a` shows in EGG instead of the dashboard. */
 export const IN_RETIREMENT = (a: string) =>
-  `(coalesce(${a}.view, CASE WHEN lower(coalesce(${a}.subtype, '')) IN (${RETIREMENT_SUBTYPES.map((s) => `'${s}'`).join(", ")}) THEN 'retirement' ELSE 'dashboard' END) = 'retirement')`;
+  `(coalesce(${a}.view, CASE WHEN lower(coalesce(${a}.subtype, '')) IN (${[...new Set([...RETIREMENT_SUBTYPES, ...ACCOUNT_TYPES.filter(t=>t.egg).map(t=>t.subtype)])].map((s) => `'${s}'`).join(", ")}) THEN 'retirement' ELSE 'dashboard' END) = 'retirement')`;
 
 // /investments/holdings/get: the bank's accounts (balances too), its securities, and what each
 // account holds, which replaces what was there.
@@ -157,7 +159,8 @@ export async function syncInvestments(env: Env, config: Config, item: ItemRow): 
 }
 
 /** One due bank per call, leased like statement details. */
-export async function runInvestmentSync(env: Env, config: Config = loadConfig(env)): Promise<Record<string, string>> {
+export async function runInvestmentSync(env: Env, config: Config | undefined = undefined): Promise<Record<string, string>> {
+  config ??= await householdConfig(env);
   const leased = await env.DB.prepare(
     `UPDATE investment_sync SET attempted_at = ${NOW}, next_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+10 minutes')
      WHERE item_id = (SELECT s.item_id FROM investment_sync s JOIN items i ON i.id = s.item_id

@@ -1,4 +1,4 @@
-let USERS = [];                    // from /users, in MINTY_USERS order (sets each person's colour)
+let USERS = [];                    // from /users, in D1 household order (sets each person's colour)
 let owner = null;
 let capacity = null;
 const statusEl = document.getElementById("status");
@@ -135,17 +135,19 @@ function renderOwners() {
   document.getElementById("owners").hidden = single;
   document.getElementById("owners").innerHTML = USERS.map(u =>
     `<button class="owner" data-owner="${esc(u.key)}" aria-pressed="${u.key === owner}">` +
-    `<span class="dot" style="background:${colorOf(u.key)}"></span>${esc(u.label)}</button>`).join("");
+    `<span class="dot" style="background:${colorOf(u.key)}"></span>${esc(u.label)}${u.archived ? " (archived)" : ""}</button>`).join("");
   // Can't link for someone whose Plaid keys aren't set yet — say so instead of failing at Plaid.
   const u = USERS.find(x => x.key === owner);
-  const ready = !!u && u.slots.some(s => s.configured);
+  const ready = !!u && !u.archived && u.slots.some(s => s.configured);
   connectBtn.disabled = !ready;
   const retire = document.getElementById("connectRetirement");
   if (retire) retire.disabled = !ready;                // the same keys and slots as a bank
-  if (u && !ready) {
+  if (u?.archived) {
+    setStatus("This person is archived. Restore them in Manage people to link another account. Existing connections are kept.");
+  } else if (u && !ready) {
     statusEl.className = "status err";
-    statusEl.innerHTML = `Plaid keys for ${esc(u.label)} aren't set yet. See <a href="/add-user">Add user</a>.`;
-  } else if (statusEl.querySelector("a[href='/add-user']")) {
+    statusEl.innerHTML = `Plaid keys for ${esc(u.label)} aren't set yet. See <a href="/connections-setup">Connections &amp; setup</a>.`;
+  } else if (statusEl.querySelector("a[href='/connections-setup']")) {
     setStatus("");
   }
 }
