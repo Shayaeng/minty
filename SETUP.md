@@ -102,7 +102,7 @@ code, and then the dashboard loads.
 Minty encrypts each bank connection's Plaid access token before storing it. In the same
 **Variables and secrets** screen, add a variable named `TOKEN_ENC_KEY` with **Secret checked**.
 
-No terminal needed: open your Minty address with `/add-user` on the end, sign in, and click
+No terminal needed: open your Minty address with `/connections-setup` on the end, sign in, and click
 **Make an encryption key → Generate a key**. It's made in your browser and never sent anywhere.
 Copy it into your password manager, then paste it as the value. Or make one with one of these:
 
@@ -122,7 +122,7 @@ Copy it into your password manager, then paste it as the value. Or make one with
 ## 5. Get Plaid keys
 
 No terminal needed: this is copy and paste between two browser tabs, the Plaid dashboard and the
-Cloudflare dashboard. The same goes for each person you add later (**+ Add user** lists the exact
+Cloudflare dashboard. The same goes for each person you add later (**Connections & setup** lists the exact
 names, each with a Copy button).
 
 1. In the Plaid dashboard: **Developers → Keys** (https://dashboard.plaid.com/developers/keys).
@@ -162,16 +162,15 @@ more, add a **Text** variable `PLAID_SLOTS` listing them in order, e.g.
   under.
 - Removing a bank doesn't give its Trial login back.
 
-**Your name, or more people:** Minty starts with one person, "Me". To use your name, or to add
-a partner or family members, open **+ Add user** on the dashboard. It generates the exact
-`MINTY_USERS` value (e.g. `me:Alex,sam:Sam`) and the secret names to add. Each extra person
-signs up for their own Plaid account (each Plaid Trial allows 10 bank logins) and gets their
-own `PLAID_CLIENT_ID_<KEY>_PRIMARY` / `PLAID_SECRET_<KEY>_PRIMARY`. With two or more people, the
-dashboard gets a person switch: **Combined** plus each name.
+**Your name, or more people:** open **Manage people**. Add, rename, reorder, archive or restore
+people directly in Minty. This does not grant login access or require Plaid keys. Existing IDs,
+including `me`, and their account assignments are preserved. `MINTY_USERS` is imported only once;
+D1 is authoritative afterwards. Optional Plaid secrets use the immutable IDs shown in Minty,
+so renaming a person cannot break a bank connection. See [household people](docs/household-people.md).
 
 ## 6. Check the setup
 
-Open **+ Add user** on your dashboard. The **Setup checks** list shows what's working and what's
+Open **Connections & setup** on your dashboard. The **Setup checks** list shows what's working and what's
 still missing, with the fix for each item. Every line should show ✓, apart from the expected
 "Plaid: sandbox" while you're testing.
 
@@ -242,7 +241,7 @@ your settings, secrets and data are untouched.
     asks about once a year; the limits built into Minty are used instead).
   - `SYNC_MAX_BYTES_PER_RUN` / `SYNC_MAX_PAGES_PER_RUN`: how much each hourly sync does. The
     defaults (150000 / 10) fit the free plan's 10 ms CPU limit. On Workers Paid, raise them.
-- **Something's wrong?** Check **+ Add user → Setup checks** first. Then look at
+- **Something's wrong?** Check **Connections & setup → Setup checks** first. Then look at
   **Workers & Pages → minty → Logs**, which show sync results by item number and never your
   data.
 
@@ -257,7 +256,7 @@ again, and no Plaid Trial login is used.
 3. Make a new key (the same command as in [step 4](#4-create-the-encryption-key)), store it in
    your password manager, and set it as the new value of `TOKEN_ENC_KEY`.
 4. Wait for the next hourly sync (:17 past the hour). Each bank connection is saved again under
-   the new key. **+ Add user → Setup checks** counts the ones still on the old key, then says
+   the new key. **Connections & setup → Setup checks** counts the ones still on the old key, then says
    the old key isn't needed any more.
 5. Delete `TOKEN_ENC_KEY_PREVIOUS`, and the old key from your password manager.
 

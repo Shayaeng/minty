@@ -253,7 +253,7 @@ export async function refreshTotals(env: Env, now = new Date()): Promise<{ from:
 // Each account's balance today, written only when it's new or changed (a handful of rows an hour).
 const SNAPSHOT = `
   INSERT INTO balance_snapshots (account_id, date, current_cents, available_cents)
-  SELECT id, date('now'), balance_current_cents, balance_available_cents FROM accounts
+  SELECT id, CASE WHEN is_manual=1 THEN coalesce(balance_as_of, substr(updated_at,1,10)) ELSE date('now') END, balance_current_cents, balance_available_cents FROM accounts
   WHERE balance_current_cents IS NOT NULL OR balance_available_cents IS NOT NULL
   ON CONFLICT (account_id, date) DO UPDATE SET current_cents = excluded.current_cents, available_cents = excluded.available_cents
   WHERE balance_snapshots.current_cents IS NOT excluded.current_cents OR balance_snapshots.available_cents IS NOT excluded.available_cents`;
@@ -263,8 +263,8 @@ const SNAPSHOT = `
 const NET_WORTH = `
   INSERT INTO net_worth (date, owner, assets_cents, debts_cents)
   SELECT date('now'), owner,
-         sum(CASE WHEN type IN ('depository', 'investment') THEN coalesce(balance_current_cents, 0) ELSE 0 END),
-         sum(CASE WHEN type IN ('credit', 'loan') THEN coalesce(balance_current_cents, 0) ELSE 0 END)
+         sum(CASE WHEN type IN ('depository', 'investment', 'other_asset') THEN coalesce(balance_current_cents, 0) ELSE 0 END),
+         sum(CASE WHEN type IN ('credit', 'loan', 'other_liability') THEN coalesce(balance_current_cents, 0) ELSE 0 END)
   FROM accounts WHERE NOT ${LEFT_OUT("accounts")} GROUP BY owner
   ON CONFLICT (date, owner) DO UPDATE SET assets_cents = excluded.assets_cents, debts_cents = excluded.debts_cents
   WHERE net_worth.assets_cents IS NOT excluded.assets_cents OR net_worth.debts_cents IS NOT excluded.debts_cents`;
@@ -276,12 +276,12 @@ const NET_WORTH_REBUILD = [
   "DELETE FROM net_worth",
   `INSERT INTO net_worth (date, owner, assets_cents, debts_cents)
    WITH days AS (SELECT DISTINCT date FROM balance_snapshots),
-        acc AS (SELECT id, owner, type FROM accounts WHERE type IN ('depository', 'investment', 'credit', 'loan') AND NOT ${LEFT_OUT("accounts")}),
+        acc AS (SELECT id, owner, type FROM accounts WHERE type IN ('depository', 'investment', 'other_asset', 'credit', 'loan', 'other_liability') AND NOT ${LEFT_OUT("accounts")}),
         v AS (SELECT d.date, a.owner, a.type,
                      (SELECT s.current_cents FROM balance_snapshots s WHERE s.account_id = a.id AND s.date <= d.date ORDER BY s.date DESC LIMIT 1) AS c
               FROM days d CROSS JOIN acc a)
-   SELECT date, owner, sum(CASE WHEN type IN ('depository', 'investment') THEN coalesce(c, 0) ELSE 0 END),
-          sum(CASE WHEN type IN ('credit', 'loan') THEN coalesce(c, 0) ELSE 0 END)
+   SELECT date, owner, sum(CASE WHEN type IN ('depository', 'investment', 'other_asset') THEN coalesce(c, 0) ELSE 0 END),
+          sum(CASE WHEN type IN ('credit', 'loan', 'other_liability') THEN coalesce(c, 0) ELSE 0 END)
    FROM v GROUP BY date, owner`,
 ];
 

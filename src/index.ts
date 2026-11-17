@@ -1,8 +1,10 @@
+import { householdConfig, listPeople, savePerson, reorderPeople } from './people';
+import { ACCOUNT_TYPES, ACCOUNT_GROUPS } from '../public/account-types.js';
 import { savePeople } from './routes/account-people';
 import * as manual from './routes/manual';
 import type { Env } from "./env";
 import { checkAccess } from "./access";
-import { ConfigError, loadConfig, type Config } from "./config";
+import { ConfigError, type Config } from "./config";
 import { HttpError, MAX_BODY_BYTES, bodyTooLarge, json, unprocessable } from "./http";
 import { COUNT_ABOVE_ROWS, budgetRefusal, countingDb, isHeavyRead, pruneReadCounts, rateLimited, recordReads } from "./limits";
 import * as data from "./routes/data";
@@ -39,6 +41,11 @@ const ROUTES: Array<[method: string, path: RegExp, handler: Handler]> = [
   ["POST", /^\/accounts$/, ({env,config,request}) => manual.save(env,config,request)],
   ["PUT", /^\/accounts\/(\d+)\/manual$/, ({env,config,request,params}) => manual.save(env,config,request,Number(params[0]))],
   ["PUT", /^\/accounts\/(\d+)\/people$/, ({env,request,params}) => savePeople(env,request,Number(params[0]))],
+  ["GET", /^\/people$/, ({env}) => listPeople(env)],
+  ["POST", /^\/people$/, ({env,request}) => savePerson(env,request)],
+  ["PUT", /^\/people\/order$/, ({env,request}) => reorderPeople(env,request)],
+  ["PUT", /^\/people\/([a-z0-9]+)$/, ({env,request,params}) => savePerson(env,request,params[0])],
+  ["GET", /^\/account-types$/, () => Promise.resolve(json({types:ACCOUNT_TYPES,groups:ACCOUNT_GROUPS}))],
   ["GET", /^\/status$/, ({ env, config, email }) => setup.status(env, config, email)],
   ["GET", /^\/users$/, ({ env, config }) => data.users(env, config)],
   ["GET", /^\/items$/, ({ env, config }) => data.items(env, config)],
@@ -138,7 +145,7 @@ export default {
     // Every statement the handler runs is counted; a request that read a lot adds to the day's total.
     const counted = countingDb(env.DB);
     try {
-      const config = loadConfig(env);
+      const config = await householdConfig(env);
       if (isHeavyRead(request.method, url)) {
         const refusal = await budgetRefusal(env);
         if (refusal) return json({ detail: refusal }, 429);

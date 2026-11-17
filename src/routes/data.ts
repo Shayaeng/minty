@@ -1,3 +1,6 @@
+import { accountType } from '../../public/account-types.js';
+import { people } from '../people';
+import { LEFT_OUT } from '../accounts';
 import { IN_RETIREMENT } from "../investments";
 import type { Env } from "../env";
 import { type Config, isConfigured } from "../config";
@@ -22,9 +25,11 @@ export const MAX_SEARCH_BYTES = 48;
 
 export async function users(env: Env, config: Config): Promise<Response> {
   // Reports only whether keys are present, never the keys themselves.
+  const archived = new Set((await people(env)).filter(p=>p.archived).map(p=>p.id));
   return json([...config.users].map(([key, label]) => ({
     key,
     label,
+    archived: archived.has(key),
     slots: config.ownerAccounts.get(key)!.map((account) => ({
       account,
       slot: account.slice(account.indexOf("_") + 1),
@@ -57,15 +62,16 @@ export async function accounts(env: Env, url: URL): Promise<Response> {
   const owner = url.searchParams.get("owner");
   // Retirement accounts (EGG) are islanded: left out unless ?view=all, or switched to the dashboard.
   const island = url.searchParams.get("view") === "all" ? "1" : `NOT ${IN_RETIREMENT("accounts")}`;
-  const select = `SELECT id, owner, item_id, is_manual, holder_name, beneficiary_name, responsible_adult_name, (SELECT institution_name FROM items WHERE items.id=accounts.item_id) AS institution_name, plaid_account_id, ${ACCOUNT_NAME("accounts")} AS name, name AS plaid_name, display_name, mask, type, subtype,
+  const select = `SELECT id, owner, item_id, is_manual, detailed_type, institution_manual, balance_as_of, notes, login_url, holder_ids, beneficiary_id, responsible_adult_id, holder_name, beneficiary_name, responsible_adult_name, (SELECT institution_name FROM items WHERE items.id=accounts.item_id) AS institution_name, plaid_account_id, ${ACCOUNT_NAME("accounts")} AS name, name AS plaid_name, display_name, mask, type, subtype,
                          balance_current_cents / 100.0 AS balance_current,
                          balance_available_cents / 100.0 AS balance_available,
-                         currency, updated_at, ${IN_RETIREMENT("accounts")} AS in_retirement
+                         currency, updated_at, ${LEFT_OUT("accounts")} AS excluded, ${IN_RETIREMENT("accounts")} AS in_retirement
                   FROM accounts`;
   const stmt = owner
     ? env.DB.prepare(`${select} WHERE owner = ? AND ${island} ORDER BY name`).bind(owner)
     : env.DB.prepare(`${select} WHERE ${island} ORDER BY owner, name`);
-  const rows = (await stmt.all<{ id: number }>()).results;
+  type AccountRow = { id:number; holder_ids:string; holder_name:string|null; beneficiary_id:string|null; beneficiary_name:string|null; responsible_adult_id:string|null; responsible_adult_name:string|null };
+  const rows = (await stmt.all<AccountRow>()).results;
   // Card members (Plaid's account_owner) on multi-card accounts, e.g. Amex authorized-user cards,
   // most-used first. Only accounts that have any; their transactions without one are listed as
   // { name: null } so they can be picked too.
@@ -88,8 +94,14 @@ export async function accounts(env: Env, url: URL): Promise<Response> {
   }
   members.sort((a, z) => a.account_id - z.account_id || Number(a.name === null) - Number(z.name === null) || z.count - a.count
     || (a.name ?? "").localeCompare(z.name ?? ""));
+  const personRows=await people(env);
+  const personLabel=(id:unknown)=>personRows.find(p=>p.id===id)?.label;
   return json(rows.map((a) => ({
     ...a,
+    holder_name: (JSON.parse(a.holder_ids || '[]') as string[]).map(personLabel).filter(Boolean).join(', ') || a.holder_name,
+    beneficiary_name: personLabel(a.beneficiary_id) || a.beneficiary_name,
+    responsible_adult_name: personLabel(a.responsible_adult_id) || a.responsible_adult_name,
+    account_type: accountType(a),
     card_members: members.filter((m) => m.account_id === a.id).map(({ name, count }) => ({ name, count })),
   })));
 }
@@ -97,7 +109,7 @@ export async function accounts(env: Env, url: URL): Promise<Response> {
 export async function capacity(env: Env, config: Config): Promise<Response> {
   // Per-person Trial-account usage: how many Items each credential set holds vs the cap.
   const [itemsRes, reservedRes] = await env.DB.batch([
-    env.DB.prepare("SELECT plaid_account, count(*) AS n FROM items GROUP BY plaid_account"),
+    env.DB.prepare("SELECT plaid_account, count(*) AS n FROM items WHERE status != 'manual' GROUP BY plaid_account"),
     // Link sessions holding a slot (src/routes/link.ts): being linked right now, or interrupted
     env.DB.prepare(`SELECT plaid_account, count(*) AS n FROM link_sessions s WHERE ${RESERVED} GROUP BY plaid_account`),
   ]);

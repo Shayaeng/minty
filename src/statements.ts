@@ -1,5 +1,6 @@
+import { householdConfig } from './people';
 import type { Env } from "./env";
-import { type Config, credsFor, isConfigured, loadConfig } from "./config";
+import { type Config, credsFor, isConfigured } from "./config";
 import { FernetError } from "./fernet";
 import { openAccessToken } from "./token-key";
 import { PlaidError, plaidPostText } from "./plaid";
@@ -104,7 +105,8 @@ export async function syncStatements(env: Env, config: Config, item: ItemRow): P
 
 /** One due bank per call. The lease (next_attempt_at moved 10 minutes on, in one statement) keeps
  * two overlapping runs off the same bank; a crash just retries after it. */
-export async function runStatementSync(env: Env, config: Config = loadConfig(env)): Promise<Record<string, string>> {
+export async function runStatementSync(env: Env, config: Config | undefined = undefined): Promise<Record<string, string>> {
+  config ??= await householdConfig(env);
   const leased = await env.DB.prepare(
     `UPDATE statement_sync SET attempted_at = ${NOW}, next_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+10 minutes')
      WHERE item_id = (SELECT s.item_id FROM statement_sync s JOIN items i ON i.id = s.item_id

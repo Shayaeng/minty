@@ -1,5 +1,6 @@
+import { householdConfig } from './people';
 import type { Env } from "./env";
-import { type Config, credsFor, isConfigured, loadConfig } from "./config";
+import { type Config, credsFor, isConfigured } from "./config";
 import { FernetError } from "./fernet";
 import { openAccessToken } from "./token-key";
 import { PlaidError, plaidMessageOf, plaidPost, plaidPostText, statusForCode, statusForError } from "./plaid";
@@ -296,7 +297,7 @@ export async function checkItem(env: Env, config: Config, item: ItemRow): Promis
 
 /** Check the banks least recently checked, up to `max`, about once a day each. Hourly cron only. */
 export async function checkConnections(env: Env, max = CHECKS_PER_RUN): Promise<Record<number, string | null>> {
-  const config = loadConfig(env);
+  const config = await householdConfig(env);
   const { results: items } = await env.DB.prepare(
     `SELECT * FROM items WHERE status IN ('good', 'login_required')
        AND (checked_at IS NULL OR checked_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '${CHECK_EVERY}'))
@@ -316,7 +317,7 @@ export async function runSyncAll(
   env: Env, budget: Budget = { pages: pagesPerRun(env), bytes: bytesPerRun(env) },
   opts: { updatesOnly?: boolean } = {},
 ): Promise<Record<number, ItemResult>> {
-  const config = loadConfig(env);
+  const config = await householdConfig(env);
   const { results: items } = await env.DB.prepare(
     `SELECT * FROM items WHERE status IN ('good', 'login_required') AND products = 'transactions'
      ${opts.updatesOnly ? "AND sync_start_cursor IS NOT NULL" : ""}

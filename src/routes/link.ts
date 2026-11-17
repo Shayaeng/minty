@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { people } from '../people';
 import { type Config, ConfigError, credsFor, isConfigured, secretNames } from "../config";
 import { FernetError, fernetEncrypt } from "../fernet";
 import { openAccessToken } from "../token-key";
@@ -144,6 +145,7 @@ export async function createLinkToken(env: Env, config: Config, request: Request
   const b = await body(request);
   const owner = b.owner;
   if (typeof owner !== "string" || !config.users.has(owner)) throw new HttpError(400, "unknown owner");
+  if ((await people(env)).find(p=>p.id===owner)?.archived) throw unprocessable('Restore this person in Manage people before linking another account');
   if (b.kind !== undefined && b.kind !== "transactions" && b.kind !== "investments") throw unprocessable("kind must be 'transactions' or 'investments'");
   const investments = b.kind === "investments";
   const session = await reserveSlot(env, config, owner, email, investments ? "investments" : "reconnect");   // overflow decision happens here

@@ -1,4 +1,4 @@
-// People come from /users (MINTY_USERS order sets their colour). The offline preview
+// People come from /users (D1 household order sets their colour). The offline preview
 // falls back to the two people in SAMPLE.
 let USERS = [{ key: "me", label: "Alex" }, { key: "sam", label: "Sam" }];   // offline preview only (SAMPLE's two people)
 const colorOf = k => { const i = USERS.findIndex(u => u.key === k); return i < 0 ? "var(--muted)" : `var(--u${i % 6})`; };
@@ -224,7 +224,7 @@ function populateBankFilter() {
   if (ITEMS === null) html = `<div class="none">Banks load from the Minty API.</div>`;
   else if (!banks.length) html = `<div class="none">No banks linked${state.owner === "all" ? "" : " for " + escapeHtml(labelOf(state.owner))} yet. Use “+ Add account”.</div>`;
   else {
-    // one group per person, in MINTY_USERS order, then anyone since removed from it
+    // one group per person, in D1 household order, then anyone since removed from it
     const owners = [...USERS.map(u => u.key), ...new Set(banks.map(b => b.owner))].filter((o, i, a) => a.indexOf(o) === i);
     html = owners.filter(o => banks.some(b => b.owner === o)).map(o =>
       `<div class="optgroup"><span class="dot" style="background:${colorOf(o)}"></span>${escapeHtml(labelOf(o))}</div>` +

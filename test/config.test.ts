@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { env } from "cloudflare:workers";
 import { ConfigError, credsFor, isConfigured, keyState, loadConfig, parseSlots, parseUsers, secretNames } from "../src/config";
 import type { Env } from "../src/env";
@@ -6,6 +6,7 @@ import { call, getJson } from "./helpers";
 
 // MINTY_USERS parsing, credential slots and settings validation.
 const E = env as unknown as Env;
+beforeEach(async()=>{await env.DB.prepare("DELETE FROM household_people").run();await env.DB.prepare("DELETE FROM app_state WHERE key='people_imported'").run();});
 
 describe("MINTY_USERS", () => {
   it("defaults to one person; more come only from MINTY_USERS, in order", () => {
@@ -102,10 +103,10 @@ describe("GET /users", () => {
     const r = await call("/users");
     const text = await r.text();
     expect(JSON.parse(text)).toEqual([
-      { key: "me", label: "Me", slots: [
+      { key: "me", label: "Me", archived: false, slots: [
         { account: "me_primary", slot: "primary", configured: true },
         { account: "me_backup", slot: "backup", configured: true }] },
-      { key: "spouse", label: "Spouse", slots: [
+      { key: "spouse", label: "Spouse", archived: false, slots: [
         { account: "spouse_primary", slot: "primary", configured: true },
         { account: "spouse_backup", slot: "backup", configured: false }] },
     ]);
