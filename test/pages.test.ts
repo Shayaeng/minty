@@ -34,7 +34,7 @@ describe("static pages", () => {
     expect(html).toContain('href="/connect">+ Add account');
     expect(html).toContain('href="/add-user">+ Add user');
     expect(html).not.toContain('data-owner="spouse"');            // person buttons come from /users
-    expect(html).toContain("seg.hidden = USERS.length < 2");       // no person switch for one person
+    expect(html).toContain("seg.hidden = false");       // Everyone remains visible for one person
     expect(html).not.toMatch(/owner:"spouse"|label: "Spouse"/);   // no built-in spouse, not even in samples
     expect(html).toContain('id="tagBtn"');                         // multi-tag filter
   });

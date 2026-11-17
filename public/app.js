@@ -25,13 +25,13 @@ async function loadUsers() {
 
 function renderOwnerSeg() {
   const seg = document.getElementById("ownerSeg");
-  seg.hidden = USERS.length < 2;                 // one person: nothing to switch between
+  seg.hidden = false;                 // one person: nothing to switch between
   if (seg.hidden) { seg.innerHTML = ""; state.owner = "all"; return; }
   const n = USERS.length;
   const stops = USERS.map((u, i) => `${colorOf(u.key)} ${i * 100 / n}% ${(i + 1) * 100 / n}%`).join(", ");
   const btn = (key, label, bg) => `<button data-owner="${escapeAttr(key)}" aria-pressed="${state.owner === key}">` +
     `<span class="dot" style="background:${bg}"></span>${escapeHtml(label)}</button>`;
-  document.getElementById("ownerSeg").innerHTML = `<i class="seg-thumb" aria-hidden="true"></i>` + btn("all", "Combined", `linear-gradient(90deg, ${stops})`) +
+  document.getElementById("ownerSeg").innerHTML = `<i class="seg-thumb" aria-hidden="true"></i>` + btn("all", "Everyone", `linear-gradient(90deg, ${stops})`) +
     USERS.map(u => btn(u.key, u.label, colorOf(u.key))).join("");
   placeOwnerThumb();
 }

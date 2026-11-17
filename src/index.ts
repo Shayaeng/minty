@@ -1,3 +1,4 @@
+import { savePeople } from './routes/account-people';
 import * as manual from './routes/manual';
 import type { Env } from "./env";
 import { checkAccess } from "./access";
@@ -37,6 +38,7 @@ type Handler = (c: {
 const ROUTES: Array<[method: string, path: RegExp, handler: Handler]> = [
   ["POST", /^\/accounts$/, ({env,config,request}) => manual.save(env,config,request)],
   ["PUT", /^\/accounts\/(\d+)\/manual$/, ({env,config,request,params}) => manual.save(env,config,request,Number(params[0]))],
+  ["PUT", /^\/accounts\/(\d+)\/people$/, ({env,request,params}) => savePeople(env,request,Number(params[0]))],
   ["GET", /^\/status$/, ({ env, config, email }) => setup.status(env, config, email)],
   ["GET", /^\/users$/, ({ env, config }) => data.users(env, config)],
   ["GET", /^\/items$/, ({ env, config }) => data.items(env, config)],

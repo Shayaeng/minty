@@ -4,8 +4,9 @@ async function load() {
   const accounts = await api('/accounts?view=all'); el('list').replaceChildren();
   for (const a of accounts.filter(a => a.is_manual)) {
     const p = document.createElement('p'); const button = document.createElement('button');
-    button.textContent = `${a.name}: ${a.balance_current} ${a.currency} — Edit`;
+    button.textContent = `${a.name}: ${a.balance_current} ${a.currency} ï¿½ Edit`;
     button.onclick = () => { el('accountId').value=a.id; for(const k of ['owner','name','type','currency']) el(k).value=a[k]; el('balance').value=a.balance_current; };
+    if (String(a.id) === new URLSearchParams(location.search).get('edit')) button.onclick();
     p.append(button); el('list').append(p);
   }
 }

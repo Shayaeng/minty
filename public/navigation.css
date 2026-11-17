@@ -1,0 +1,1 @@
+.main-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.main-tabs a{padding:10px 18px;border:1px solid var(--hairline);border-radius:999px;color:var(--ink);background:var(--surface);text-decoration:none}.main-tabs a[aria-current]{background:var(--accent);color:var(--surface)}
