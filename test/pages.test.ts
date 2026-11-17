@@ -392,7 +392,7 @@ describe("connect page Link sessions (docs/security-plan.md, step 3)", () => {
 describe("device lock (public/lock.js)", () => {
   it.each(["/", "/connect", "/add-user"])("%s loads the lock render-blocking at the end of <head>, after the page's colours", async (path) => {
     const { html } = await page(path);
-    expect(html).toContain('<link rel="stylesheet" href="/lock.css" />\n<script src="/lock.js"></script>\n</head>');
+    expect(html.replace(/\r\n/g, "\n")).toContain('<link rel="stylesheet" href="/lock.css" />\n<script src="/lock.js"></script>\n</head>');
     expect(html.indexOf("/lock.js")).toBeGreaterThan(html.indexOf("</style>"));
   });
 
