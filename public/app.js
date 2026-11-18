@@ -1,10 +1,10 @@
-// People come from /users (D1 household order sets their colour). The offline preview
-// falls back to the two people in SAMPLE.
-let USERS = [{ key: "me", label: "Alex" }, { key: "sam", label: "Sam" }];   // offline preview only (SAMPLE's two people)
+// People come from /users (D1 household order sets their colour).
+let USERS = []; // Financial data never falls back to samples.
 const colorOf = k => { const i = USERS.findIndex(u => u.key === k); return i < 0 ? "var(--muted)" : `var(--u${i % 6})`; };
 const labelOf = k => USERS.find(u => u.key === k)?.label ?? k;
 // cards: card members picked on multi-card accounts, as "<account_id>:<member>" ("" member = none)
 let state = { owner: "all", q: "", start: "", end: "", tags: [], tagMode: "any", categories: [], banks: [], accounts: [], cards: [] };
+try { state.owner = localStorage.getItem('minty_transactions_person') || 'all'; } catch {}
 let ITEMS = null;                  // linked bank logins from /items (null until loaded)
 let ACCOUNTS = null;               // their accounts and cards from /accounts (null until loaded)
 let openRows = new Set();          // plaid_txn_id of expanded rows (survives re-render)
@@ -98,11 +98,8 @@ async function load(more = false) {
     if (!more) refreshTags();
   } catch (e) {
     if (seq !== loadSeq) return;
-    offline = true; banner(true); hasMore = false;
-    txns = SAMPLE.filter(t =>
-      (state.owner === "all" || t.owner === state.owner) &&
-      matchesTags(t.tags || []) && (!state.categories.length || state.categories.includes(t.category || "OTHER")));
-    allTags = [...new Set(SAMPLE.flatMap(t => t.tags || []))].sort();
+    offline = true; hasMore = false; loaded = []; txns = []; allTags = []; summary = null;
+    notice("Could not load the selected view. " + e.message);
     populateTagFilter();
   }
   render(txns);
@@ -530,7 +527,7 @@ function detailHTML(t) {
 let summary = null;                    // GET /audit/summary (null: not loaded, or no totals yet)
 let trendKey = null;                   // whose chart is open: a person's key, "" for everyone; null when closed
 let trendSig = "", trendChart = null, trendDonut = null;
-try { const v = localStorage.getItem("minty.trends"); trendKey = v === null ? (matchMedia("(max-width: 640px)").matches ? null : "") : v === "off" ? null : v; }
+try { const v = localStorage.getItem("minty.trends:"+(window.MintyPurpose?.current||"personal")); trendKey = v === null ? (matchMedia("(max-width: 640px)").matches ? null : "") : v === "off" ? null : v; }
 catch { trendKey = matchMedia("(max-width: 640px)").matches ? null : ""; }
 const fmt0 = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const money0 = c => fmt0.format(c / 100);
@@ -843,7 +840,7 @@ document.getElementById("totals").addEventListener("click", e => {
   const card = e.target.closest("[data-trend]");
   if (!card) return;
   trendKey = trendKey === card.dataset.trend ? null : card.dataset.trend;
-  try { localStorage.setItem("minty.trends", trendKey === null ? "off" : trendKey); } catch {}
+  try { localStorage.setItem("minty.trends:"+(window.MintyPurpose?.current||"personal"), trendKey === null ? "off" : trendKey); } catch {}
   renderTotals(loaded);
   if (trendKey !== null) document.getElementById("trends").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 });
@@ -1033,6 +1030,7 @@ document.getElementById("ownerSeg").addEventListener("click", e => {
   const b = e.target.closest("button[data-owner]");
   if (!b) return;
   state.owner = b.dataset.owner;
+  try { localStorage.setItem('minty_transactions_person', state.owner); } catch {}
   e.currentTarget.querySelectorAll("button[data-owner]").forEach(x => x.setAttribute("aria-pressed", x === b));
   placeOwnerThumb();
   if (state.owner !== "all" && ITEMS) {

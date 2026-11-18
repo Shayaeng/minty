@@ -18,8 +18,8 @@ async function card(name: string, mask = "6323", bank = "Wells Fargo") {
   const enc = await fernetEncrypt("access-sandbox-secret", E.TOKEN_ENC_KEY!);
   const item = (await db.prepare(`INSERT INTO items (owner, plaid_account, plaid_item_id, access_token_enc, institution_name, txn_cursor, status)
     VALUES ('me', 'me_primary', ?, ?, ?, 'c1', 'good') RETURNING *`).bind(`item-${crypto.randomUUID()}`, enc, bank).first<ItemRow>())!;
-  const id = (await db.prepare(`INSERT INTO accounts (owner, item_id, plaid_account_id, name, mask, type, subtype, balance_current_cents)
-    VALUES ('me', ?, ?, ?, ?, 'credit', 'credit card', 12000) RETURNING id`).bind(item.id, `acc-${crypto.randomUUID()}`, name, mask).first<{ id: number }>())!.id;
+  const id = (await db.prepare(`INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, mask, type, subtype, balance_current_cents)
+    VALUES ('personal','me', ?, ?, ?, ?, 'credit', 'credit card', 12000) RETURNING id`).bind(item.id, `acc-${crypto.randomUUID()}`, name, mask).first<{ id: number }>())!.id;
   return { item, id };
 }
 const shown = async (id: number) => (await getJson<any[]>("/accounts?view=all")).body.find((a) => a.id === id);

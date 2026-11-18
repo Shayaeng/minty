@@ -36,7 +36,7 @@ it('imports exact IDs once, supports names with punctuation, reorders and archiv
 it('persists every catalog type and independent relationships with old valuation dates and counts assets/debts correctly',async()=>{
   const child=(await post('/people',{label:'Child'})).body.id;
   for(const t of ACCOUNT_TYPES){
-    const result=await post('/accounts',{owner:'me',name:t.label,detailed_type:t.id,currency:'USD',balance_cents:10000,balance_as_of:'2025-01-15',institution_manual:'Provider',holder_ids:['me','spouse'],beneficiary_id:child,responsible_adult_id:'me',notes:'Saved notes',login_url:'https://example.com/login',mask:'1234'});
+    const result=await post('/accounts',{purpose:'personal',owner:'me',name:t.label,detailed_type:t.id,currency:'USD',balance_cents:10000,balance_as_of:'2025-01-15',institution_manual:'Provider',holder_ids:['me','spouse'],beneficiary_id:child,responsible_adult_id:'me',notes:'Saved notes',login_url:'https://example.com/login',mask:'1234'});
     expect(result.status,t.id).toBe(201);
     const id=result.body.id;
     const saved=(await getJson<any[]>('/accounts?view=all')).body.find(a=>a.id===id);
@@ -61,7 +61,7 @@ it('persists every catalog type and independent relationships with old valuation
 });
 
 it('rejects unsafe URLs and impossible dates without changing a saved manual balance',async()=>{
-  const r=await post('/accounts',{owner:'me',name:'Savings',detailed_type:'savings',currency:'USD',balance_cents:10000});
+  const r=await post('/accounts',{purpose:'personal',owner:'me',name:'Savings',detailed_type:'savings',currency:'USD',balance_cents:10000});
   for(const b of [{login_url:'javascript:alert(1)'},{balance_as_of:'2025-02-31'},{beneficiary_id:'missing'},{holder_ids:['missing']}]){
     expect((await post(`/accounts/${r.body.id}/manual`,b,'PUT')).status).toBe(422);
   }
@@ -69,7 +69,7 @@ it('rejects unsafe URLs and impossible dates without changing a saved manual bal
 });
 
 it('migrates a legacy broad investment without guessing tax treatment or changing its identity and balance',async()=>{
-  await env.DB.prepare("INSERT INTO accounts (id,owner,item_id,plaid_account_id,name,type,balance_current_cents,is_manual,holder_name,updated_at) VALUES (99,'me',1,'legacy-manual','IRA or 529?', 'investment',123456,1,'Original holder','2024-04-15T12:00:00Z')").run();
+  await env.DB.prepare("INSERT INTO accounts (purpose,id,owner,item_id,plaid_account_id,name,type,balance_current_cents,is_manual,holder_name,updated_at) VALUES ('personal',99,'me',1,'legacy-manual','IRA or 529?', 'investment',123456,1,'Original holder','2024-04-15T12:00:00Z')").run();
   const migration=env.TEST_MIGRATIONS.find(m=>m.name==='0023_household_people.sql')!;
   for(const sql of migration.queries.filter(q=>q.includes('UPDATE accounts SET detailed_type'))) await env.DB.prepare(sql).run();
   expect(await env.DB.prepare('SELECT id,owner,balance_current_cents,detailed_type,holder_name,balance_as_of FROM accounts WHERE id=99').first()).toEqual({id:99,owner:'me',balance_current_cents:123456,detailed_type:'other_investment',holder_name:'Original holder',balance_as_of:'2024-04-15'});

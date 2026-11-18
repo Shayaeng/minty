@@ -6,7 +6,7 @@ test('bonus offers share one account, keep obligations independent, and persist 
   const suffix=Date.now().toString(),name=`Bonus account ${suffix}`,ownerName=`Bonus owner ${suffix}`;
   const beforeAccounts=await(await request.get('/accounts?view=all')).json();
   const owner=await(await request.post('/people',{data:{label:ownerName}})).json();
-  const account=await(await request.post('/accounts',{data:{owner:owner.id,name,detailed_type:'checking',currency:'USD',balance_cents:50000}})).json();
+  const account=await(await request.post('/accounts',{data:{purpose:'personal',owner:owner.id,name,detailed_type:'checking',currency:'USD',balance_cents:50000}})).json();
   await page.goto('/account-overview');
   await page.locator('#people').getByRole('button',{name:ownerName,exact:true}).click();
   const card=page.locator('.account-card').filter({has:page.getByRole('heading',{name,exact:true})});

@@ -21,7 +21,7 @@ beforeEach(async () => {
   const other = await item("Chase");
   acct = {};
   for (const [k, it, type] of [["cap1", bank, "credit"], ["card", other, "credit"], ["checking", other, "depository"]] as const) {
-    acct[k] = (await db.prepare(`INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype) VALUES ('me', ?, ?, ?, ?, ?) RETURNING id`)
+    acct[k] = (await db.prepare(`INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype) VALUES ('personal','me', ?, ?, ?, ?, ?) RETURNING id`)
       .bind(it, k, k, type, type === "credit" ? "credit card" : "checking").first<{ id: number }>())!.id;
   }
   await txn("card", "2026-09-03", 5000, "ENTERTAINMENT", "Concert", ["sync"]);

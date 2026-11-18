@@ -26,7 +26,7 @@ beforeEach(async () => {
     VALUES ('me', 'me_primary', 'item-c', 'x', 'Chase', 'good') RETURNING id`).first<{ id: number }>())!.id;
   acct = {};
   for (const [key, type, subtype] of [["checking", "depository", "checking"], ["card", "credit", "credit card"]]) {
-    acct[key] = (await db.prepare(`INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype) VALUES ('me', ?, ?, ?, ?, ?) RETURNING id`)
+    acct[key] = (await db.prepare(`INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype) VALUES ('personal','me', ?, ?, ?, ?, ?) RETURNING id`)
       .bind(item, key, key === "card" ? "Sapphire" : "Checking", type, subtype).first<{ id: number }>())!.id;
   }
 });

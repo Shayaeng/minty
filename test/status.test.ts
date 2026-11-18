@@ -73,9 +73,9 @@ describe("GET /status", () => {
         (2, 'me', 'me_primary', 'chase', 'x', 'Chase'),
         (3, 'me', 'me_primary', 'amex-solo', 'x', 'American Express'),
         (4, 'me', 'me_primary', 'other', 'x', 'Capital One')`),
-      env.DB.prepare(`INSERT INTO accounts (id, owner, item_id, plaid_account_id, name, mask) VALUES
-        (10, 'me', 1, 'a10', 'Gold', '1001'), (20, 'me', 2, 'a20', 'Checking', '4821'),
-        (30, 'me', 3, 'a30', 'Blue', '1005'), (40, 'me', 4, 'a40', 'Venture', '7777')`),
+      env.DB.prepare(`INSERT INTO accounts (purpose,id, owner, item_id, plaid_account_id, name, mask) VALUES
+        ('personal',10, 'me', 1, 'a10', 'Gold', '1001'), ('personal',20, 'me', 2, 'a20', 'Checking', '4821'),
+        ('personal',30, 'me', 3, 'a30', 'Blue', '1005'), ('personal',40, 'me', 4, 'a40', 'Venture', '7777')`),
       env.DB.prepare(`INSERT INTO transactions (owner, account_id, plaid_txn_id, amount_cents, date, account_owner) VALUES
         ('me', 10, 't1', 100, '2026-10-01', 'ALEX MORGAN'), ('me', 10, 't2', 200, '2026-10-02', 'SAM MORGAN -1013'),
         ('me', 10, 't3', 300, '2026-10-03', NULL), ('me', 10, 't3b', 300, '2026-10-04', 'ALEX MORGAN'),
@@ -163,7 +163,7 @@ describe("GET /status", () => {
        (3, 'me', 'me_primary', 'dl', 'x', 'Citibank Online', 'c', '', 'good', ?2, NULL),
        (4, 'me', 'me_primary', 'relogin', 'x', 'Ally', 'c', NULL, 'login_required', ?1, NULL),
        (5, 'me', 'me_primary', 'quiet', 'x', NULL, 'c', NULL, 'good', ?1, NULL)`).bind(hoursAgo(80), hoursAgo(0.2)).run();
-    await env.DB.prepare(`INSERT INTO accounts (id, owner, item_id, plaid_account_id) VALUES (30, 'me', 3, 'acct-30')`).run();
+    await env.DB.prepare(`INSERT INTO accounts (purpose,id, owner, item_id, plaid_account_id) VALUES ('personal',30, 'me', 3, 'acct-30')`).run();
     await env.DB.prepare(`INSERT INTO transactions (owner, account_id, plaid_txn_id, date) VALUES ('me', 30, 't1', '2026-09-01'), ('me', 30, 't2', '2026-09-02')`).run();
     const c = byId((await getJson("/status")).body.checks);
     expect(c.bank_stalled_1).toMatchObject({ ok: false, level: "warn",

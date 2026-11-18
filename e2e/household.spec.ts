@@ -95,7 +95,7 @@ test('people and all manual account types work without Plaid, survive refresh an
   await page.goto('/account-overview');
   await page.getByRole('button', { name: `Renamed ${suffix} (archived)`, exact: true }).click();
   await expect(page.locator('#accountList .account-card')).toHaveCount(24);
-  const legacy = await (await request.post('/accounts', { data: {owner:'me',name:`Legacy ${suffix}`,type:'investment',currency:'USD',balance_cents:10000} })).json();
+  const legacy = await (await request.post('/accounts', { data: {purpose:'personal',owner:'me',name:`Legacy ${suffix}`,type:'investment',currency:'USD',balance_cents:10000} })).json();
   await request.put(`/accounts/${legacy.id}/people`, { data: {holder_name:'Original holder',beneficiary_name:'Original child',responsible_adult_name:'Original adult'} });
   await page.goto(`/manual?edit=${legacy.id}`);
   await expect(page.locator('#legacyPeople')).toContainText('Original holder');

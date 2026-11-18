@@ -70,7 +70,7 @@ const HEALTH_SHORT = { ok: "Up to date", downloading: "Downloading its history",
   stalled: "Not syncing lately", reconnect: "Needs you to sign in again", broken: "Stopped: link it again", stranded: "Its Plaid keys are missing" };
 async function loadConnected() {
   try {
-    const [i, a] = await Promise.all([fetch("/items"), fetch("/accounts?view=all")]);
+    const [i, a] = await Promise.all([fetch("/connections"), fetch("/accounts?view=all")]);
     if (i.ok) connectedItems = await i.json();
     if (a.ok) connectedAccounts = await a.json();
   } catch {}
@@ -163,7 +163,7 @@ document.getElementById("owners").addEventListener("click", e => {
 // "Reconnect" links here): repair them with Link update mode.
 async function loadReconnect() {
   try {
-    const r = await fetch("/items");
+    const r = await fetch("/connections");
     if (r.ok) reconnectItems = (await r.json()).filter(i => i.health?.action === "reconnect" || i.status === "login_required");
   } catch {}
   // Arriving from the dashboard's Reconnect link: show the person whose bank it is.
@@ -476,14 +476,8 @@ function openLink(entry, receivedRedirectUri) {
         linkStore.drop(entry.id);                        // used (or refused): a public token works once
         if (!res.ok) throw new Error(await why(res));
         const data = await res.json();
-        setStatus(entry.mode === "link-investments"
-          ? "Connected. Its investment accounts arrive within about ten minutes, in EGG on the dashboard (not in the feed)."
-          : data.status === "good" ? "Connected. Transactions are syncing." : "Connected (status: " + data.status + ").", "ok");
-        loadCapacity();
-        loadConnected();
-        loadInvestments();
-        connectBtn.disabled = false;
-        document.getElementById("connectRetirement").disabled = false;
+        location.assign("/account-classification?item_id="+encodeURIComponent(data.item_id));
+        return;
       } catch (e) {
         setStatus("Exchange failed: " + e.message, "err");
         connectBtn.disabled = false;

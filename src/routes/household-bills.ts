@@ -123,9 +123,9 @@ export async function createBill(env: Env, config: Config, request: Request): Pr
   if (sha !== null && !(typeof sha === "string" && /^[0-9a-f]{64}$/.test(sha))) throw unprocessable("file_sha256 must be a SHA-256 in hex");
   if (source === "pdf" && !sha) throw unprocessable("a bill read from a PDF needs file_sha256");
   const row = await env.DB.prepare(
-    `INSERT INTO bills (owner, biller, match_name, amount_cents, due_date, statement_date, account_hint, source, file_sha256)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (file_sha256) DO NOTHING RETURNING id`)
-    .bind(f.owner, f.biller, f.match_name, f.amount_cents, f.due_date, f.statement_date, f.account_hint, source, sha).first<{ id: number }>();
+    `INSERT INTO bills (owner, biller, match_name, amount_cents, due_date, statement_date, account_hint, source, file_sha256, purpose)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (file_sha256) DO NOTHING RETURNING id`)
+    .bind(f.owner, f.biller, f.match_name, f.amount_cents, f.due_date, f.statement_date, f.account_hint, source, sha, env.PURPOSE??'personal').first<{ id: number }>();
   if (!row) throw new HttpError(409, "This PDF was already added.");
   return json({ id: row.id }, 201);
 }

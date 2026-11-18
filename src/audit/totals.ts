@@ -1,3 +1,4 @@
+import { purposeEnv } from '../purpose';
 import type { Env } from "../env";
 import { LEFT_OUT } from "../accounts";
 
@@ -46,6 +47,7 @@ const SAVING = (id: string) => `coalesce(json_extract(?3, '$."' || ${id} || '"')
  * { transaction id: 1 } for the transactions with a tag left out, in any case (found once: a
  * lookup in the query for each transaction would be a read for each). */
 export async function accountMaps(env: Env): Promise<[string, string, string, string]> {
+  env=purposeEnv(env);
   const [acc, ex] = await env.DB.batch([
     env.DB.prepare("SELECT id, item_id, type, subtype FROM accounts"),
     env.DB.prepare("SELECT kind, value FROM analytics_exclusions"),
@@ -208,6 +210,7 @@ export const markLeftOutChanged = (env: Env) => env.DB.batch([setState(env, "aud
 /** The hourly cron's step (and the quiet catch-up run's, so a correction shows within minutes):
  * refreshes monthly_totals where something changed; with the weekly rebuild, recurring charges too. */
 export async function refreshTotals(env: Env, now = new Date()): Promise<{ from: string | null; full: boolean; recurring?: boolean }> {
+  env=purposeEnv(env);
   const s = await state(env);
   const top = (await env.DB.prepare("SELECT max(id) AS id FROM transactions").first<{ id: number | null }>())?.id ?? 0;
   const mark = Number(s.audit_watermark ?? 0);
@@ -290,6 +293,7 @@ const THIN = "DELETE FROM balance_snapshots WHERE date < date('now', '-365 days'
 
 /** The hourly cron's step: today's balances; once a day (the first run after midnight UTC), thins old ones. */
 export async function snapshotBalances(env: Env, now = new Date()): Promise<number> {
+  env=purposeEnv(env);
   const [r] = await env.DB.batch([env.DB.prepare(SNAPSHOT), env.DB.prepare(NET_WORTH)]);
   if (now.getUTCHours() === 0) await env.DB.prepare(THIN).run();
   return r.meta.changes ?? 0;

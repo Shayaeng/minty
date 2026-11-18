@@ -1,3 +1,4 @@
+import { connectionRows } from '../health';
 import type { Env } from "../env";
 import { people } from '../people';
 import { type Config, ConfigError, credsFor, isConfigured, secretNames } from "../config";
@@ -6,7 +7,7 @@ import { openAccessToken } from "../token-key";
 import { HttpError, json, jsonBody, unprocessable } from "../http";
 import { PlaidError, plaidPost } from "../plaid";
 import { type ItemRow, checkItem, syncItem } from "../sync";
-import { BANK_ROWS_SQL, type BankRow, bankHealth } from "../health";
+import { bankHealth } from "../health";
 
 /** Plaid Link flow: /link/token -> Link in the browser ->
  * /link/exchange (stores the encrypted access token, starts the first sync in the background).
@@ -246,7 +247,7 @@ export async function reconnected(env: Env, config: Config, request: Request): P
   const item = await env.DB.prepare("SELECT * FROM items WHERE id = ?").bind(itemId).first<ItemRow>();
   if (!item) throw new HttpError(404, "item not found");
   const result = await checkItem(env, config, item);
-  const row = await env.DB.prepare(`${BANK_ROWS_SQL} WHERE i.id = ?`).bind(itemId).first<BankRow>();
+  const row = (await connectionRows(env)).find(r=>r.id===itemId);
   return json({ item_id: item.id, checked: result !== "skipped" && result !== "retry", health: bankHealth(env, config, row!) });
 }
 

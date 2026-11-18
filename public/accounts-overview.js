@@ -2,6 +2,7 @@
     const el = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     let accounts = [], users = [], persons = [], groups = {}, selected = '', category = '';
+    try { selected = localStorage.getItem('minty_accounts_person') || ''; } catch {}
     const fields = [['holder_name', 'Owner / holder'], ['beneficiary_name', 'Beneficiary'], ['responsible_adult_name', 'Responsible adult']];
     const household = a => users.find(u => u.key === a.owner)?.label || a.owner;
     const key = s => s.trim().toLocaleLowerCase();
@@ -37,12 +38,13 @@
         el('categories').innerHTML = Object.entries(groups).map(([g, label]) => { const list = rows.filter(a => !a.excluded && a.account_type.group === g), sums = totals(list); return `<button type="button" class="summary-category" data-category="${g}" aria-pressed="${category === g}">${esc(label)}<small> · ${list.length} included account(s)</small>${sums.size ? [...sums].map(([c, t]) => `<strong>${esc(money(g === 'debts' ? t.debts : t.assets, c))} ${esc(c)}</strong>`).join('') : '<strong>No accounts</strong>'}</button>`; }).join('');
         el('categoryFilter').innerHTML = category ? `Showing ${esc(groups[category])}. <button type="button" class="pill" id="clearCategory">Show all accounts</button>` : '';
         const visible = rows.filter(a => !category || a.account_type.group === category);
-        el('accountList').innerHTML = visible.length ? visible.map(a => `<article class="account-card"><h2>${esc(a.name || 'Account')}</h2><span>${a.is_manual ? 'Manual' : 'Connected'}${a.excluded ? ' · Excluded from totals' : ''}</span><strong class="amount">${esc(money(a.balance_current, a.currency))}</strong><dl><dt>Institution</dt><dd>${esc(a.institution_manual || a.institution_name || 'Not specified')}</dd><dt>Account type</dt><dd>${esc(a.account_type.label)}</dd><dt>Household person</dt><dd>${esc(household(a))}</dd>${fields.map(([f, l]) => `<dt>${l}</dt><dd>${esc(a[f] || 'Not specified')}</dd>`).join('')}<dt>${a.is_manual ? 'Balance as of' : 'Balance synced'}</dt><dd>${esc(a.is_manual ? (a.balance_as_of || 'Unknown') : (a.updated_at ? new Date(a.updated_at).toLocaleString() : 'Unknown'))}</dd>${a.mask ? `<dt>Last four</dt><dd>${esc(a.mask)}</dd>` : ''}</dl>${a.notes ? `<p>${esc(a.notes)}</p>` : ''}<div class="bonus-summary" data-bonus-summary="${a.id}"></div><div class="account-actions"><button type="button" class="pill" data-open-bonus="${a.id}">Opening &amp; bonus details</button>${a.is_manual ? `<a href="/manual.html?edit=${a.id}">Edit balance &amp; details</a>` : ''}${a.login_url && /^https?:\/\//i.test(a.login_url) ? `<a href="${esc(a.login_url)}" target="_blank" rel="noopener noreferrer">Account login</a>` : ''}<button type="button" class="pill" data-edit-people="${a.id}">Edit relationships</button></div></article>`).join('') : '<p class="account-empty">No saved accounts for this view. Add an account or clear the filter.</p>';
+        el('accountList').innerHTML = visible.length ? visible.map(a => `<article class="account-card"><h2>${esc(a.name || 'Account')}</h2><span>${a.is_manual ? 'Manual' : 'Connected'}${a.inventory_only ? ' · Inventory only' : ''}${a.excluded ? ' · Excluded from totals' : ''}</span><strong class="amount">${esc(money(a.balance_current, a.currency))}</strong><dl><dt>Institution</dt><dd>${esc(a.institution_manual || a.institution_name || 'Not specified')}</dd><dt>Account type</dt><dd>${esc(a.account_type.label)}</dd><dt>Household person</dt><dd>${esc(household(a))}</dd>${fields.map(([f, l]) => `<dt>${l}</dt><dd>${esc(a[f] || 'Not specified')}</dd>`).join('')}<dt>${a.is_manual ? 'Balance as of' : 'Balance synced'}</dt><dd>${esc(a.is_manual ? (a.balance_as_of || 'Unknown') : (a.updated_at ? new Date(a.updated_at).toLocaleString() : 'Unknown'))}</dd>${a.mask ? `<dt>Last four</dt><dd>${esc(a.mask)}</dd>` : ''}</dl>${a.notes ? `<p>${esc(a.notes)}</p>` : ''}<div class="bonus-summary" data-bonus-summary="${a.id}"></div><div class="account-actions"><button type="button" class="pill" data-move-purpose="${a.id}" data-target-purpose="${a.purpose==='personal'?'churning':'personal'}">Move to ${a.purpose==='personal'?'Churning':'Personal'}</button><button type="button" class="pill" data-open-bonus="${a.id}">Opening &amp; bonus details</button>${a.is_manual ? `<a href="/manual.html?edit=${a.id}">Edit balance &amp; details</a>` : ''}${a.login_url && /^https?:\/\//i.test(a.login_url) ? `<a href="${esc(a.login_url)}" target="_blank" rel="noopener noreferrer">Account login</a>` : ''}<button type="button" class="pill" data-edit-people="${a.id}">Edit relationships</button></div></article>`).join('') : '<p class="account-empty">No saved accounts for this view. Add an account or clear the filter.</p>';
         if (typeof window!=='undefined') window.MintyBonuses?.decorate();
         if (document.dispatchEvent && typeof CustomEvent!=='undefined') document.dispatchEvent(new CustomEvent('minty:accounts-filter',{detail:{accountIds:rows.map(a=>a.id)}}));
     }
     el('people').onclick = e => { const b = e.target.closest('[data-person]'); if (b) {
         selected = b.dataset.person;
+        try { localStorage.setItem('minty_accounts_person', selected); } catch {}
         render();
     } };
     el('categories').onclick = e => { const b = e.target.closest('[data-category]'); if (b) {
@@ -54,6 +56,7 @@
         render();
     } };
     el('accountList').onclick = e => {
+        const move=e.target.closest('[data-move-purpose]');if(move){window.MintyPurpose.move(Number(move.dataset.movePurpose),move.dataset.targetPurpose);return;}
         const bonus=e.target.closest('[data-open-bonus]'); if(bonus){window.MintyBonuses?.openAccount(Number(bonus.dataset.openBonus));return;} const b = e.target.closest('[data-edit-people]'); if (!b)
         return; const a = accounts.find(a => a.id === Number(b.dataset.editPeople)); el('peopleAccount').value = a.id; for (const f of ['holder_ids', 'beneficiary_id', 'responsible_adult_id']) {
         el(f).replaceChildren();

@@ -20,8 +20,8 @@ async function setup() {
   acct = {};
   for (const [key, type, subtype, owner] of [["checking", "depository", "checking", "me"], ["savings", "depository", "savings", "me"],
     ["card", "credit", "credit card", "me"], ["brokerage", "investment", "brokerage", "me"], ["spouse", "depository", "checking", "spouse"]]) {
-    acct[key] = (await db.prepare(`INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents)
-      VALUES (?, ?, ?, ?, ?, ?, 100000) RETURNING id`).bind(owner, item, key, key, type, subtype).first<{ id: number }>())!.id;
+    acct[key] = (await db.prepare(`INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents)
+      VALUES ('personal',?, ?, ?, ?, ?, ?, 100000) RETURNING id`).bind(owner, item, key, key, type, subtype).first<{ id: number }>())!.id;
   }
 }
 async function txn(account: string, date: string, cents: number, category: string | null, name: string, o: { merchant?: string; pending?: number } = {}) {

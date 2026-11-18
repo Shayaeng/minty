@@ -3,6 +3,7 @@
  * PLAID_CLIENT_ID_<KEY>_<SLOT> / PLAID_SECRET_<KEY>_<SLOT>, hence the index signature. */
 export interface Env {
   DB: D1Database;
+  PURPOSE?: import("./purpose").Purpose;
   ASSETS: Fetcher;
   /** Rate limits per login (wrangler.jsonc "ratelimits"). Missing = not limited (src/limits.ts). */
   RL_GENERAL?: RateLimit;

@@ -2,7 +2,7 @@
     const el = id => document.getElementById(id);
     let persons = [], accounts = [], types = [];
     const legacy = a => [!JSON.parse(a.holder_ids || '[]').length ? a.holder_name : null, !a.beneficiary_id ? a.beneficiary_name : null, !a.responsible_adult_id ? a.responsible_adult_name : null].filter(Boolean);
-    const textFields = ['owner', 'name', 'detailed_type', 'institution_manual', 'beneficiary_id', 'responsible_adult_id', 'mask', 'currency', 'balance_as_of', 'notes', 'login_url'];
+    const textFields = ['purpose', 'owner', 'name', 'detailed_type', 'institution_manual', 'beneficiary_id', 'responsible_adult_id', 'mask', 'currency', 'balance_as_of', 'notes', 'login_url'];
     async function api(path, options) { const r = await fetch(path, options); const b = await r.json(); if (!r.ok)
         throw Error(b.detail || 'Request failed'); return b; }
     async function loadPeople() { const saved = {}; for (const f of ['owner', 'holder_ids', 'beneficiary_id', 'responsible_adult_id'])
@@ -17,7 +17,9 @@
             el(f).append(o);
         }
     } }
-    function edit(a) { const older = legacy(a); el('legacyPeople').hidden = !older.length; el('legacyClearLabel').hidden = !older.length; el('clearLegacy').checked = false; el('legacyPeople').textContent = 'Legacy relationship labels: ' + older.join(', ') + '. They are retained unless replaced with people or explicitly cleared.'; el('accountId').value = a.id; for (const f of textFields)
+    function balanceMode(){el('balance').disabled=el('inventory_only').checked;el('balance').required=!el('inventory_only').checked;}
+    el('inventory_only').onchange=balanceMode;
+    function edit(a) {el('inventory_only').checked=!!a.inventory_only;balanceMode(); const older = legacy(a); el('legacyPeople').hidden = !older.length; el('legacyClearLabel').hidden = !older.length; el('clearLegacy').checked = false; el('legacyPeople').textContent = 'Legacy relationship labels: ' + older.join(', ') + '. They are retained unless replaced with people or explicitly cleared.'; el('accountId').value = a.id; for (const f of textFields)
         el(f).value = a[f] ?? ''; el('detailed_type').value = a.detailed_type || 'other_investment'; el('balance').value = a.balance_current; const holders = Array.isArray(a.holder_ids) ? a.holder_ids : JSON.parse(a.holder_ids || '[]'); for (const o of el('holder_ids').options)
         o.selected = holders.includes(o.value); for (const f of ['owner', 'holder_ids', 'beneficiary_id', 'responsible_adult_id'])
         for (const o of el(f).options)
@@ -47,8 +49,9 @@
                 if (previous[label] && !previous[f] && !body[f])
                     delete body[f];
         }
-        body.balance_cents = Math.round(Number(el('balance').value) * 100);
+        body.inventory_only=el('inventory_only').checked;body.balance_cents=body.inventory_only?null:Math.round(Number(el('balance').value)*100);
         const saved = await api(id ? `/accounts/${id}/manual` : '/accounts', { method: id ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        if(window.MintyPurpose && saved.purpose!==window.MintyPurpose.current){window.MintyPurpose.notify('Account saved in '+(saved.purpose==='personal'?'Personal':'Churning')+'. Switch views to see it.');location.assign('/account-overview');return;}
         el('accountId').value = saved.id;
         await load();
         el('status').textContent = 'Account saved. Balances and net worth are updated.';
@@ -56,9 +59,10 @@
     catch (e) {
         el('status').textContent = e.message;
     } };
-    el('form').onreset = () => { setTimeout(() => { el('accountId').value = ''; el('balance_as_of').value = new Date().toISOString().slice(0, 10); el('status').textContent = ''; el('legacyPeople').hidden = true; el('legacyClearLabel').hidden = true; }, 0); };
+    el('form').onreset = () => { setTimeout(() => { el('accountId').value = ''; el('balance_as_of').value = new Date().toISOString().slice(0, 10); el('purpose').value=window.MintyPurpose?.current||'personal';balanceMode();el('status').textContent = ''; el('legacyPeople').hidden = true; el('legacyClearLabel').hidden = true; }, 0); };
     el('reloadPeople').onclick = () => loadPeople().catch(e => el('status').textContent = e.message);
     (async () => { try {
+        el('purpose').value=window.MintyPurpose?.current||'personal';balanceMode();
         const catalog = await api('/account-types');
         types = catalog.types;
         for (const t of types)
