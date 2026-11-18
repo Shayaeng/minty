@@ -1,3 +1,4 @@
+import * as accountBonuses from './routes/account-bonuses';
 import { householdConfig, listPeople, savePerson, reorderPeople } from './people';
 import { ACCOUNT_TYPES, ACCOUNT_GROUPS } from '../public/account-types.js';
 import { savePeople } from './routes/account-people';
@@ -5,7 +6,7 @@ import * as manual from './routes/manual';
 import type { Env } from "./env";
 import { checkAccess } from "./access";
 import { ConfigError, type Config } from "./config";
-import { HttpError, MAX_BODY_BYTES, bodyTooLarge, json, unprocessable } from "./http";
+import { HttpError, bodyLimitFor, bodyTooLarge, json, unprocessable } from "./http";
 import { COUNT_ABOVE_ROWS, budgetRefusal, countingDb, isHeavyRead, pruneReadCounts, rateLimited, recordReads } from "./limits";
 import * as data from "./routes/data";
 import * as abc from "./routes/benefits";
@@ -38,6 +39,16 @@ type Handler = (c: {
 }) => Promise<Response>;
 
 const ROUTES: Array<[method: string, path: RegExp, handler: Handler]> = [
+  ["GET", /^\/account-bonuses$/, ({env,config,url}) => accountBonuses.list(env,config,url)],
+  ["PUT", /^\/accounts\/(\d+)\/lifecycle$/, ({env,request,params}) => accountBonuses.saveLifecycle(env,request,Number(params[0]))],
+  ["POST", /^\/account-bonuses\/offers$/, ({env,request}) => accountBonuses.saveOffer(env,request)],
+  ["PUT", /^\/account-bonuses\/offers\/(\d+)$/, ({env,request,params}) => accountBonuses.saveOffer(env,request,Number(params[0]))],
+  ["POST", /^\/account-bonuses\/requirements$/, ({env,request}) => accountBonuses.saveRequirement(env,request)],
+  ["PUT", /^\/account-bonuses\/requirements\/(\d+)$/, ({env,request,params}) => accountBonuses.saveRequirement(env,request,Number(params[0]))],
+  ["DELETE", /^\/account-bonuses\/requirements\/(\d+)$/, ({env,params}) => accountBonuses.deleteChild(env,Number(params[0]),"requirements")],
+  ["POST", /^\/account-bonuses\/payments$/, ({env,request}) => accountBonuses.savePayment(env,request)],
+  ["PUT", /^\/account-bonuses\/payments\/(\d+)$/, ({env,request,params}) => accountBonuses.savePayment(env,request,Number(params[0]))],
+  ["DELETE", /^\/account-bonuses\/payments\/(\d+)$/, ({env,params}) => accountBonuses.deleteChild(env,Number(params[0]),"payments")],
   ["POST", /^\/accounts$/, ({env,config,request}) => manual.save(env,config,request)],
   ["PUT", /^\/accounts\/(\d+)\/manual$/, ({env,config,request,params}) => manual.save(env,config,request,Number(params[0]))],
   ["PUT", /^\/accounts\/(\d+)\/people$/, ({env,request,params}) => savePeople(env,request,Number(params[0]))],
@@ -135,8 +146,8 @@ export default {
     if (await rateLimited(env, auth.email, request.method, url)) {
       return json({ detail: "Too many requests. Wait a minute and try again." }, 429, { "retry-after": "60" });
     }
-    if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) {
-      const e = bodyTooLarge();
+    if (Number(request.headers.get("content-length")) > bodyLimitFor(url.pathname)) {
+      const e = bodyTooLarge(bodyLimitFor(url.pathname));
       return json({ detail: e.detail }, e.status);
     }
 

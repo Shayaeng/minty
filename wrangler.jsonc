@@ -53,6 +53,7 @@
       "/users",
       "/items",
       "/health",
+      "/account-bonuses", "/account-bonuses/*",
       "/accounts",
       "/accounts/*",
       "/capacity",

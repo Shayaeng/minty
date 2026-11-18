@@ -37,6 +37,7 @@ web browser.
   quarterly and annual credit on your cards (Amex Platinum, Business Platinum and Business Gold,
   Citi Strata Premier, Altitude Reserve), with what's used and what's still open, checked
   against the statement credits. See `docs/abc.md`.
+- **Account-opening bonuses**: Accounts includes a Bonus tracker for multiple offers, requirement deadlines, partial payments, explicit holding rules and explained closure-date overrides. Tracker amounts never alter balances or net worth. See [bonus tracker](docs/bonus-tracker.md).
 - **Deploys**: Cloudflare Workers Builds runs `npm run deploy` on every push to `main`
   (apply D1 migrations, then deploy). GitHub Actions only runs tests.
 

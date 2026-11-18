@@ -25,13 +25,15 @@ export const unprocessable = (detail: string) => new HttpError(422, detail);
 /** Request bodies are small JSON objects (the largest, 50 tags, is ~3.5 KB). Anything bigger is
  * refused before it's read into memory or parsed. */
 export const MAX_BODY_BYTES = 16 * 1024;
-export const bodyTooLarge = () => new HttpError(413, `request body too large (at most ${MAX_BODY_BYTES / 1024} KiB)`);
+export const bodyTooLarge = (limit = MAX_BODY_BYTES) => new HttpError(413, `request body too large (at most ${limit / 1024} KiB)`);
+// Original offer terms may be lengthy. All other routes retain their existing 16 KiB cap.
+export const bodyLimitFor = (path: string) => /^\/account-bonuses\/offers(?:\/\d+)?$/.test(path) ? 64 * 1024 : MAX_BODY_BYTES;
 
 /** The request's JSON body, read up to MAX_BODY_BYTES (also when no Content-Length is sent).
  * Throws HttpError 413 past that, or the parse error for a body that isn't JSON, like
  * request.json() did. */
-export async function jsonBody(request: Request): Promise<unknown> {
-  if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) throw bodyTooLarge();
+export async function jsonBody(request: Request, limit = MAX_BODY_BYTES): Promise<unknown> {
+  if (Number(request.headers.get("content-length")) > limit) throw bodyTooLarge(limit);
   const chunks: Uint8Array[] = [];
   let size = 0;
   if (request.body) {
@@ -40,9 +42,9 @@ export async function jsonBody(request: Request): Promise<unknown> {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         await reader.cancel().catch(() => {});
-        throw bodyTooLarge();
+        throw bodyTooLarge(limit);
       }
       chunks.push(value);
     }
