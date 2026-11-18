@@ -36,6 +36,21 @@ beforeEach(async () => { await wipe(); plaid = new FakePlaid().install(); });
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("syncItem", () => {
+  it("persists authorization dates on new and changed transactions without rewriting their posting dates", async () => {
+    const item = await addItem();
+    plaid.syncPages.push(page("authorized1", false, { accounts: [account("a1")], added: [
+      txn("quarter-end", "a1", { date: "2026-07-01", authorized_date: "2026-06-30" }),
+      txn("no-authorization", "a1", { date: "2026-07-01" }),
+    ] }));
+    expect(await syncItem(E, config, item, { pages: 1 })).toBe("good");
+    expect(await rows("SELECT plaid_txn_id, date, authorized_date FROM transactions ORDER BY plaid_txn_id")).toEqual([
+      { plaid_txn_id: "no-authorization", date: "2026-07-01", authorized_date: null },
+      { plaid_txn_id: "quarter-end", date: "2026-07-01", authorized_date: "2026-06-30" },
+    ]);
+    plaid.syncPages.push(page("authorized2", false, { modified: [txn("quarter-end", "a1", { date: "2026-07-02", authorized_date: "2026-06-29" })] }));
+    expect(await syncItem(E, config, await itemById(item.id), { pages: 1 })).toBe("good");
+    expect((await rows("SELECT date, authorized_date FROM transactions WHERE plaid_txn_id='quarter-end'"))[0]).toEqual({ date: "2026-07-02", authorized_date: "2026-06-29" });
+  });
   it("syncs every page, persisting each (cursor last) with the item's own credentials", async () => {
     const item = await addItem({ owner: "me", plaid_account: "me_backup" });
     plaid.syncPages.push(

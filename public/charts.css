@@ -43,6 +43,31 @@
 .sc-pt { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; box-shadow: 0 0 0 2px var(--surface); }
 .sc-cur { position: absolute; top: 0; bottom: 0; border-left: 1px dashed color-mix(in srgb, var(--muted) 55%, transparent); }
 .sc-cur[hidden], .sc-pt[hidden] { display: none; }
+/* this month against an average month (o.pace): running total, dashed average, the days under it */
+.sc-spark.sc-pace { display: flex; flex-direction: column; gap: 3px; height: auto; margin: 10px 0 0; padding-bottom: 2px; }
+.sc-spark.sc-pace .sc-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; animation: none; }
+.sc-avgline { fill: none; stroke: color-mix(in srgb, var(--muted) 65%, transparent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.sc-ly { fill: color-mix(in srgb, var(--muted) 16%, transparent); stroke: none; }
+.sc-tt2 { display: flex; gap: 8px; }        /* a title and the last-year key: the title shortens first */
+.sc-tt2 > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sc-lykey { flex: none; }
+.sc-lykey i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; vertical-align: -0.5px; background: color-mix(in srgb, var(--muted) 30%, transparent); }
+.sc-avg { position: absolute; right: 0; transform: translateY(-115%); font-size: 9.5px; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.sc-days { position: relative; height: 11px; font-size: 9.5px; color: var(--muted); }
+.sc-days span { position: absolute; top: 0; left: 0; transform: translateX(-50%); }
+.sc-days span:first-child { transform: none; }
+.sc-days span.end { left: auto; right: 0; transform: none; }
+.sc-pace .sc-last { margin-left: -3.5px; }
+/* bars instead of a line (o.bars): a title, the scale's top and $0, a bar per month */
+.sc-spark.sc-bars { display: flex; flex-direction: column; gap: 3px; height: auto; margin: 10px 0 0; padding-bottom: 12px; }
+.sc-tt { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-plot { position: relative; flex: 1; min-height: 38px; }
+.sc-spark.sc-bars .sc-plot svg { position: absolute; top: 0; bottom: 0; left: 30px; width: calc(100% - 30px); height: 100%; }
+.sc-ax { position: absolute; left: 0; font-size: 9.5px; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sc-ax.top { top: 0; } .sc-ax.bot { bottom: 0; }
+.sc-bar { fill: currentColor; opacity: .85; transition: opacity .15s; }
+.sc-bar.now { opacity: .4; }
+.sc.scrub .sc-bar:not(.on) { opacity: .3; }
 .sc.spend { --sc-color: var(--c-spend); } .sc.income { --sc-color: var(--in); } .sc.rate { --sc-color: var(--accent); }
 
 /* segmented control with a sliding thumb */
@@ -61,6 +86,9 @@
 .ia-value { font-size: 26px; font-weight: 650; letter-spacing: -0.03em; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .ia-sub { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 12.5px; color: var(--muted); }
 .ia-plot { position: relative; margin-top: 6px; }
+.ia-label { display: inline-block; margin: 0 0 2px 46px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 550; letter-spacing: .01em;
+            color: var(--muted); background: color-mix(in srgb, var(--muted) 10%, var(--surface)); pointer-events: none; }
+.ia-label[hidden] { display: none; }
 .ia-svg { display: block; overflow: visible; outline: none; }
 .ia-svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
 .ia-line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

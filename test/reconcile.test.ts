@@ -66,6 +66,51 @@ describe("merchantKey and csv", () => {
   });
 });
 
+describe("refunded less a fee (Off by)", () => {
+  it("pairs a charge with a refund from the same merchant exactly that much short, and takes them out of the rest", () => {
+    const stay = tx(200, "2026-10-01", "Marriott Downtown"), back = tx(-175, "2026-10-05", "MARRIOTT DOWNTOWN");
+    const other = tx(90, "2026-10-02", "Hilton"), otherBack = tx(-40, "2026-10-09", "Hilton");       // $50 short: a different fee
+    const none = R.summarize([stay, back, other, otherBack]);
+    expect(none.lessFee).toEqual([]);
+    expect(none.partial).toHaveLength(2);                                   // without Off by: both refunded in part
+    const s = R.summarize([stay, back, other, otherBack], { offBy: 2500 });
+    expect(s.lessFee).toEqual([expect.objectContaining({ charge: stay, refund: back, cents: 20000, refunded: 17500, fee: 2500, days: 4 })]);
+    expect(s.partial.map((g: any) => g.name)).toEqual(["Hilton"]);          // the $25 pair isn't partial or open any more
+    expect(s.openCharges).toEqual([]);
+  });
+
+  it("never pairs a refund before its charge, another merchant's, or one past 120 days", () => {
+    const early = [tx(-75, "2026-10-01", "Delta"), tx(100, "2026-10-03", "Delta")];
+    const elsewhere = [tx(100, "2026-10-01", "Delta"), tx(-75, "2026-10-03", "United")];
+    const late = [tx(100, "2026-01-01", "Delta"), tx(-75, "2026-06-01", "Delta")];
+    for (const rows of [early, elsewhere, late]) expect(R.summarize(rows, { offBy: 2500 }).lessFee).toEqual([]);
+  });
+});
+
+describe("changed, then refunded", () => {
+  it("an upgrade then a refund of both, and a downgrade then a refund of the rest, balance", () => {
+    const up = [tx(200, "2026-10-01", "Marriott"), tx(50, "2026-10-03", "MARRIOTT"), tx(-250, "2026-10-09", "Marriott")];
+    const down = [tx(300, "2026-10-01", "Delta"), tx(-80, "2026-10-04", "DELTA"), tx(-220, "2026-10-20", "Delta")];
+    const s = R.summarize([...up, ...down]);
+    expect(s.chains.map((c: any) => [c.kind, c.charge.id, c.change.id, c.refund.id, c.fee])).toEqual([
+      ["upgrade", up[0].id, up[1].id, up[2].id, 0], ["downgrade", down[0].id, down[1].id, down[2].id, 0]]);
+    expect([s.partial, s.openCharges, s.openCredits]).toEqual([[], [], []]);
+  });
+
+  it("with Off by, the three add up to the fee kept", () => {
+    const rows = [tx(200, "2026-10-01", "Marriott"), tx(50, "2026-10-03", "Marriott"), tx(-225, "2026-10-09", "Marriott")];
+    expect(R.summarize(rows).chains).toEqual([]);                               // $25 short: not balanced without it
+    expect(R.summarize(rows, { offBy: 2500 }).chains).toEqual([expect.objectContaining({ kind: "upgrade", fee: 2500 })]);
+  });
+
+  it("an exact pair goes first, and a 'downgrade' that refunds it all isn't one", () => {
+    const pair = [tx(100, "2026-10-01", "Hilton"), tx(-100, "2026-10-02", "Hilton"), tx(-1, "2026-10-03", "Hilton")];
+    expect(R.summarize(pair).refunds).toHaveLength(1);
+    const odd = [tx(100, "2026-10-01", "Hyatt"), tx(-100, "2026-10-02", "Hyatt", { name: "Hyatt adj" }), tx(0.01, "2026-10-03", "Hyatt")];
+    expect(R.summarize(odd).chains).toEqual([]);
+  });
+});
+
 describe("breakdown", () => {
   const rows = [
     tx(10, "2026-09-03", "A", { tags: ["sync"], account_id: 1 }),
@@ -87,6 +132,20 @@ describe("breakdown", () => {
     expect(t.groups.map((g: any) => [g.label, g.total])).toEqual([["No tag", 2000], ["sync", 1500], ["Travel", 500]]);
     expect(t.overlaps).toBe(true);
     expect(R.spread(rows)).toMatchObject({ month: 2, year: 1, person: 2, card: 2, tag: 3 });
+  });
+
+  it("by card member: each member of each card, and a row without one under its account (the main card)", () => {
+    const cards = [
+      tx(10, "2026-09-03", "A", { account_id: 2, account_name: "Amex", institution_name: "American Express" }),
+      tx(20, "2026-09-04", "B", { account_id: 2, account_name: "Amex", institution_name: "American Express", account_owner: "JANE DOE" }),
+      tx(30, "2026-09-05", "C", { account_id: 3, account_name: "Amex Gold", institution_name: "American Express", account_owner: "Jane Doe " }),
+      tx(5, "2026-09-06", "D", { account_id: 2, account_name: "Amex", institution_name: "American Express", account_owner: "SAM ROE" }),
+      tx(7, "2026-09-07", "E", { account_id: 2, account_name: "Amex", institution_name: "American Express", account_owner: "jane doe" }),
+    ];
+    expect(R.breakdown(cards, "member").groups.map((g: any) => [g.label, g.total, g.count]))
+      .toEqual([["Jane Doe · Amex Gold", 3000, 1], ["jane doe · Amex", 2700, 2], ["American Express · Amex", 1000, 1], ["SAM ROE · Amex", 500, 1]]);
+    expect(R.spread(cards)).toMatchObject({ card: 2, member: 4 });
+    expect(R.breakdown(cards, "card", "member").value["a:2"]).toEqual({ "a:2": 1000, "m:2:jane doe": 2700, "m:2:sam roe": 500 });
   });
 
   it("beyond 12 groups, the rest are Other", () => {
