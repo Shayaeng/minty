@@ -17,7 +17,7 @@ it('renders manual-only balances, counts overlapping relationships once and filt
   await env.DB.batch(['transaction_tags','transactions','accounts','items','net_worth','monthly_totals'].map(t=>env.DB.prepare(`DELETE FROM ${t}`)));
   const envOverrides = { PLAID_CLIENT_ID_ME_PRIMARY: '', PLAID_SECRET_ME_PRIMARY: '', TOKEN_ENC_KEY: '' };
   for(const [name,type,balance] of [['Savings','depository',10000],['Card','credit',2500]] as const) {
-    expect((await getJson('/accounts',{envOverrides,method:'POST',body:JSON.stringify({owner:'me',name,type,balance_cents:balance,currency:'USD'})})).status).toBe(201);
+    expect((await getJson('/accounts',{envOverrides,method:'POST',body:JSON.stringify({purpose:'personal',owner:'me',name,type,balance_cents:balance,currency:'USD'})})).status).toBe(201);
   }
   const accounts=(await getJson<any[]>('/accounts?view=all',{envOverrides})).body;
   await getJson(`/accounts/${accounts.find(a=>a.type==='depository').id}/people`,{method:'PUT',body:JSON.stringify({holder_name:'Me',beneficiary_name:'Child',responsible_adult_name:'Me'})});
@@ -41,7 +41,7 @@ it('renders manual-only balances, counts overlapping relationships once and filt
 it('keeps currencies separate and applies exclusions to summary balances and counts', async () => {
   for(const id of [10,11,20]) await getJson('/audit/exclusions',{method:'PUT',body:JSON.stringify({kind:'account',value:id,left_out:true})});
   for(const [name,type,currency,cents] of [['Education','529','USD',50000],['Canadian savings','savings','CAD',90000],['Excluded pension','pension','USD',20000]] as const){
-    const r=await getJson<any>('/accounts',{method:'POST',body:JSON.stringify({owner:'me',name,detailed_type:type,currency,balance_cents:cents})});
+    const r=await getJson<any>('/accounts',{method:'POST',body:JSON.stringify({purpose:'personal',owner:'me',name,detailed_type:type,currency,balance_cents:cents})});
     if(type==='pension') await getJson('/audit/exclusions',{method:'PUT',body:JSON.stringify({kind:'account',value:r.body.id,left_out:true})});
   }
   const nodes=new Map<string,any>();

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Finish account setup · Minty</title>
+<link rel="stylesheet" href="/purpose.css"><script src="/purpose.js"></script><script src="/theme.js"></script><link rel="stylesheet" href="/accounts.css"><link rel="stylesheet" href="/household.css"><link rel="stylesheet" href="/lock.css"><script src="/lock.js"></script></head>
+<body><main class="classification-page"><a href="/account-overview">Back to Accounts</a><h1>Finish account setup</h1>
+<p>Choose Personal or Churning for each individual account. An institution, login, person or account type never determines an account's purpose. Unclassified accounts stay out of both views until you choose.</p>
+<p>Changing a purpose moves the account's entire transaction, balance and bonus history into the other view. Nothing is copied. Closed accounts retain their classification.</p>
+<div class="classification-actions"><button class="pill" type="button" data-bulk-purpose="personal">Set listed accounts to Personal</button><button class="pill" type="button" data-bulk-purpose="churning">Set listed accounts to Churning</button></div>
+<form id="classificationForm"><div id="classificationAccounts"></div><section id="standaloneSetup" hidden><h2>Standalone bills and points</h2><p>These records are not linked to a financial account. Choose their view separately so they never appear in both.</p><div id="classificationStandalone"></div></section><button class="pill" type="submit" id="saveClassifications">Save classifications</button></form>
+<p id="classificationStatus" class="classification-status" role="status"></p><p>Newly discovered Plaid accounts will appear here too. Interrupted setup leaves them Unclassified; your existing choices are preserved.</p></main><script src="/classification.js"></script></body></html>

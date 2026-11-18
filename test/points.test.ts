@@ -178,10 +178,10 @@ describe("expiry rules and the cards that earn each currency (part 3)", () => {
     await env.DB.batch(["transaction_tags", "transactions", "card_products", "accounts", "items"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
     const item = (await env.DB.prepare(`INSERT INTO items (owner, plaid_account, plaid_item_id, access_token_enc, institution_name, status)
       VALUES ('me', 'me_primary', 'item-amex', 'x', 'American Express', 'good') RETURNING id`).first<{ id: number }>())!.id;
-    await env.DB.prepare(`INSERT INTO accounts (owner, item_id, plaid_account_id, name, mask, type, subtype) VALUES
-      ('me', ?1, 'a1', 'Platinum Card®', '1004', 'credit', 'credit card'),
-      ('spouse', ?1, 'a2', 'Delta SkyMiles® Gold Card', '2002', 'credit', 'credit card'),
-      ('me', ?1, 'a3', 'Savings', '3003', 'depository', 'savings')`).bind(item).run();
+    await env.DB.prepare(`INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, mask, type, subtype) VALUES
+      ('personal','me', ?1, 'a1', 'Platinum Card®', '1004', 'credit', 'credit card'),
+      ('personal','spouse', ?1, 'a2', 'Delta SkyMiles® Gold Card', '2002', 'credit', 'credit card'),
+      ('personal','me', ?1, 'a3', 'Savings', '3003', 'depository', 'savings')`).bind(item).run();
     const body = await list();
     expect(body.balances).toEqual([]);
     expect(body.cards.map((c: any) => [c.name, c.mask, c.owner, c.program])).toEqual([

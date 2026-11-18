@@ -18,6 +18,10 @@ dashboard, with tags, search and per-person totals. Each household runs its own 
 Cloudflare: one Worker plus a D1 database, on free plans, with no server to look after.
 Your data and keys stay in your own Cloudflare and Plaid accounts.
 
+**Personal / Churning:** each financial account has its own purpose, with separate
+transactions, balances, analytics and bonus tracking. After upgrading, use **Finish
+account setup** to classify existing accounts. See [account purposes](docs/account-purposes.md).
+
 **Want your own?** Fork this repo and follow [SETUP.md](SETUP.md). Everything is done in a
 web browser.
 

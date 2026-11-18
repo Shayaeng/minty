@@ -16,7 +16,7 @@ beforeEach(async () => {
   const item = (await db.prepare(`INSERT INTO items (owner, plaid_account, plaid_item_id, access_token_enc, institution_name, status, products)
     VALUES ('me', 'me_primary', 'i-ret', 'x', 'Schwab', 'good', 'investments') RETURNING id`).first<{ id: number }>())!.id;
   ids = {};
-  const ins = db.prepare("INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id");
+  const ins = db.prepare("INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents) VALUES ('personal',?, ?, ?, ?, ?, ?, ?) RETURNING id");
   for (const [k, owner, type, subtype, bal] of [["k401", "me", "investment", "401k", 10000000], ["roth", "me", "investment", "roth", 3000000],
     ["brk", "me", "investment", "brokerage", 500000], ["hsa", "spouse", "depository", "hsa", 400000], ["chk", "me", "depository", "checking", 100000]] as const) {
     ids[k] = (await ins.bind(owner, item, k, k, type, subtype, bal).first<{ id: number }>())!.id;

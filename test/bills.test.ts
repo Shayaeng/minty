@@ -30,11 +30,11 @@ async function bank(opts: { status?: string; downloading?: boolean } = {}) {
      VALUES ('me', 'me_primary', 'item-1', ?, 'Chase', 'c1', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) RETURNING id`)
     .bind(enc, opts.downloading ? "c0" : null, opts.status ?? "good").first<{ id: number }>())!.id;
   const card = (await env.DB.prepare(
-    `INSERT INTO accounts (owner, item_id, plaid_account_id, name, mask, type, subtype, balance_current_cents, currency)
-     VALUES ('me', ?, 'acc-card', 'Sapphire', '1234', 'credit', 'credit card', 81234, 'USD') RETURNING id`).bind(item).first<{ id: number }>())!.id;
+    `INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, mask, type, subtype, balance_current_cents, currency)
+     VALUES ('personal','me', ?, 'acc-card', 'Sapphire', '1234', 'credit', 'credit card', 81234, 'USD') RETURNING id`).bind(item).first<{ id: number }>())!.id;
   await env.DB.prepare(
-    `INSERT INTO accounts (owner, item_id, plaid_account_id, name, mask, type, subtype, balance_current_cents, currency)
-     VALUES ('me', ?, 'acc-chk', 'Checking', '9876', 'depository', 'checking', 500000, 'USD')`).bind(item).run();
+    `INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, mask, type, subtype, balance_current_cents, currency)
+     VALUES ('personal','me', ?, 'acc-chk', 'Checking', '9876', 'depository', 'checking', 500000, 'USD')`).bind(item).run();
   return { item, card };
 }
 

@@ -20,7 +20,7 @@ async function checking() {
     `INSERT INTO items (owner, plaid_account, plaid_item_id, access_token_enc, institution_name, txn_cursor, status, updated_at)
      VALUES ('me', 'me_primary', 'item-b', 'x', 'Bank', 'c', 'good', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) RETURNING id`).first<{ id: number }>())!.id;
   return (await env.DB.prepare(
-    `INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype) VALUES ('me', ?, 'chk', 'Checking', 'depository', 'checking') RETURNING id`)
+    `INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype) VALUES ('personal','me', ?, 'chk', 'Checking', 'depository', 'checking') RETURNING id`)
     .bind(item).first<{ id: number }>())!.id;
 }
 async function txn(account: number, date: string, cents: number, name: string, merchant: string | null = null, pending = 0) {

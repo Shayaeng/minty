@@ -54,6 +54,7 @@
       "/items",
       "/health",
       "/account-bonuses", "/account-bonuses/*",
+      "/connections", "/account-setup",
       "/accounts",
       "/accounts/*",
       "/capacity",

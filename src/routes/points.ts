@@ -131,9 +131,9 @@ export async function createReading(env: Env, config: Config, request: Request):
   if (sha !== null && !(typeof sha === "string" && /^[0-9a-f]{64}$/.test(sha))) throw unprocessable("file_sha256 must be a SHA-256 in hex");
   if (source === "pdf" && !sha) throw unprocessable("a balance read from a PDF needs file_sha256");
   const row = await env.DB.prepare(
-    `INSERT INTO point_balances (owner, program, account_hint, balance, as_of, source, file_sha256)
-     VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (file_sha256) DO NOTHING RETURNING id`)
-    .bind(f.owner, f.program, f.account_hint, f.balance, f.as_of, source, sha).first<{ id: number }>();
+    `INSERT INTO point_balances (owner, program, account_hint, balance, as_of, source, file_sha256, purpose)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (file_sha256) DO NOTHING RETURNING id`)
+    .bind(f.owner, f.program, f.account_hint, f.balance, f.as_of, source, sha, env.PURPOSE??'personal').first<{ id: number }>();
   if (!row) throw new HttpError(409, "This PDF was already added.");
   return json({ id: row.id }, 201);
 }

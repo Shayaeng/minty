@@ -1,3 +1,5 @@
+import { purposeEnv, rawDatabase, requirePurpose } from '../purpose';
+import { classify } from './purpose-setup';
 import { snapshotBalances } from '../audit/totals';
 import { ACCOUNT_TYPES } from '../../public/account-types.js';
 import { people } from '../people';
@@ -13,7 +15,12 @@ export async function save(env: Env, config: Config, request: Request, id?: numb
         throw new HttpError(404, 'Manual account not found');
     const b = { ...old, ...input };
     const { owner, name, currency } = b;
-    const balance = input.balance_cents ?? old?.balance_current_cents;
+    const purpose=requirePurpose(input.purpose??old?.purpose);
+    const inventoryValue=input.inventory_only??old?.inventory_only??false;
+    if(![true,false,0,1].includes(inventoryValue as boolean|number))throw unprocessable('inventory_only must be true or false');
+    const inventoryOnly=!!inventoryValue;
+    const savedBalance=old?await rawDatabase(env.DB).prepare('SELECT balance_current_cents FROM accounts WHERE id=?').bind(id).first<{balance_current_cents:number|null}>():null;
+    const balance=inventoryOnly?(savedBalance?.balance_current_cents??null):(input.balance_cents??savedBalance?.balance_current_cents);
     if (typeof owner !== 'string' || !config.users.has(owner))
         throw unprocessable('Choose a household person');
     const persons = await people(env);
@@ -23,7 +30,7 @@ export async function save(env: Env, config: Config, request: Request, id?: numb
         throw unprocessable('Nickname must be 1–100 characters');
     if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency))
         throw unprocessable('Use a three-letter currency');
-    if (typeof balance !== 'number' || !Number.isSafeInteger(balance))
+    if (!inventoryOnly && (typeof balance !== 'number' || !Number.isSafeInteger(balance)))
         throw unprocessable('Balance must be integer cents');
     const legacy = { depository: 'cash_management', investment: 'other_investment', credit: 'credit_card', loan: 'other_loan' };
     const detail = input.detailed_type ?? old?.detailed_type ?? legacy[b.type as keyof typeof legacy];
@@ -63,19 +70,19 @@ export async function save(env: Env, config: Config, request: Request, id?: numb
         throw unprocessable('Choose relationships from Manage people'); return p as string | null; };
     const beneficiary = relation('beneficiary_id'), adult = relation('responsible_adult_id');
     const holderIds = JSON.stringify([...new Set(holders)]);
-    const values = [owner, name.trim(), kind.base, kind.subtype, kind.id, currency, balance, institution, asOf, notes, login, mask, holderIds, beneficiary, adult];
+    const values = [owner, name.trim(), kind.base, kind.subtype, kind.id, currency, balance, institution, asOf, notes, login, mask, holderIds, beneficiary, adult, old?.purpose ?? purpose, Number(inventoryOnly)];
     if (id !== undefined) {
         await env.DB.batch([
-            env.DB.prepare(`UPDATE accounts SET owner=?,name=?,type=?,subtype=?,detailed_type=?,currency=?,balance_current_cents=?,institution_manual=?,balance_as_of=?,notes=?,login_url=?,mask=?,holder_ids=?,beneficiary_id=?,responsible_adult_id=?,holder_name=CASE WHEN ? THEN NULL ELSE holder_name END,beneficiary_name=CASE WHEN ? THEN NULL ELSE beneficiary_name END,responsible_adult_name=CASE WHEN ? THEN NULL ELSE responsible_adult_name END,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND is_manual=1`).bind(...values, Number('holder_ids' in input), Number('beneficiary_id' in input), Number('responsible_adult_id' in input), id),
             env.DB.prepare('UPDATE items SET owner=?, institution_name=? WHERE id=? AND status=\'manual\'').bind(owner, institution || 'Manual accounts', old!.item_id),
+            env.DB.prepare(`UPDATE accounts SET owner=?,name=?,type=?,subtype=?,detailed_type=?,currency=?,balance_current_cents=?,institution_manual=?,balance_as_of=?,notes=?,login_url=?,mask=?,holder_ids=?,beneficiary_id=?,responsible_adult_id=?,purpose=?,inventory_only=?,holder_name=CASE WHEN ? THEN NULL ELSE holder_name END,beneficiary_name=CASE WHEN ? THEN NULL ELSE beneficiary_name END,responsible_adult_name=CASE WHEN ? THEN NULL ELSE responsible_adult_name END,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND is_manual=1`).bind(...values, Number('holder_ids' in input), Number('beneficiary_id' in input), Number('responsible_adult_id' in input), id),
         ]);
     }
     else {
         const key = 'manual:' + crypto.randomUUID();
         await env.DB.batch([
             env.DB.prepare(`INSERT INTO items (owner,plaid_account,plaid_item_id,access_token_enc,institution_name,status) VALUES (?,'manual',?,'',?,'manual')`).bind(owner, key, institution || 'Manual accounts'),
-            env.DB.prepare(`INSERT INTO accounts (owner,name,type,subtype,detailed_type,currency,balance_current_cents,institution_manual,balance_as_of,notes,login_url,mask,holder_ids,beneficiary_id,responsible_adult_id,item_id,plaid_account_id,is_manual)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(SELECT id FROM items WHERE plaid_item_id=?),?,1)`).bind(...values, key, key),
+            env.DB.prepare(`INSERT INTO accounts (owner,name,type,subtype,detailed_type,currency,balance_current_cents,institution_manual,balance_as_of,notes,login_url,mask,holder_ids,beneficiary_id,responsible_adult_id,purpose,inventory_only,item_id,plaid_account_id,is_manual)
+        VALUES (${Array(values.length).fill('?').join(',')},(SELECT id FROM items WHERE plaid_item_id=?),?,1)`).bind(...values, key, key),
         ]);
         id = (await env.DB.prepare('SELECT id FROM accounts WHERE plaid_account_id=?').bind(key).first<{
             id: number;
@@ -84,6 +91,11 @@ export async function save(env: Env, config: Config, request: Request, id?: numb
     if (old && old.owner !== owner) {
         await env.DB.prepare("DELETE FROM net_worth WHERE date=date('now') AND owner=? AND NOT EXISTS (SELECT 1 FROM accounts WHERE owner=?)").bind(old.owner,old.owner).run();
     }
-    await snapshotBalances(env);
-    return json({ id }, old ? 200 : 201);
+    if (old && old.purpose !== purpose) {
+        await classify({...env, DB:rawDatabase(env.DB)},new Request('https://minty.local/account-setup',{
+            method:'PUT',body:JSON.stringify({purpose}),
+        }),id);
+    }
+    await snapshotBalances(purposeEnv(env,purpose));
+    return json({ id, purpose, inventory_only:inventoryOnly }, old ? 200 : 201);
 }

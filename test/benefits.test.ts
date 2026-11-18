@@ -253,12 +253,12 @@ async function seed() {
     ...["benefit_marks", "card_products", "transaction_tags", "transactions", "accounts", "items"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)),
     env.DB.prepare(`INSERT INTO items (id, owner, plaid_account, plaid_item_id, access_token_enc, institution_name) VALUES
       (1, 'me', 'me_primary', 'amex', 'x', 'American Express'), (2, 'me', 'me_primary', 'usb', 'x', 'U.S. Bank')`),
-    env.DB.prepare(`INSERT INTO accounts (id, owner, item_id, plaid_account_id, name, mask, type, subtype) VALUES
-      (10, 'me', 1, 'a10', 'Business Platinum Card®', '9101', 'credit', 'credit card'),
-      (11, 'me', 1, 'a11', 'Charles Schwab Platinum Card®', '9102', 'credit', 'credit card'),
-      (12, 'me', 1, 'a12', 'Blue Business Plus Card', '9103', 'credit', 'credit card'),
-      (20, 'me', 2, 'a20', 'Credit Card - 9104', '9104', 'credit', 'credit card'),
-      (21, 'me', 2, 'a21', 'Checking', '0001', 'depository', 'checking')`),
+    env.DB.prepare(`INSERT INTO accounts (purpose,id, owner, item_id, plaid_account_id, name, mask, type, subtype) VALUES
+      ('personal',10, 'me', 1, 'a10', 'Business Platinum Card®', '9101', 'credit', 'credit card'),
+      ('personal',11, 'me', 1, 'a11', 'Charles Schwab Platinum Card®', '9102', 'credit', 'credit card'),
+      ('personal',12, 'me', 1, 'a12', 'Blue Business Plus Card', '9103', 'credit', 'credit card'),
+      ('personal',20, 'me', 2, 'a20', 'Credit Card - 9104', '9104', 'credit', 'credit card'),
+      ('personal',21, 'me', 2, 'a21', 'Checking', '0001', 'depository', 'checking')`),
     env.DB.prepare(`INSERT INTO transactions (owner, account_id, plaid_txn_id, amount_cents, date, name, merchant_name, pending) VALUES
       ('me', 10, 't1', 20000, '2026-06-22', 'DELL INC', 'Dell Inc. (h Q)', 0),
       ('me', 10, 't2', -15000, '2026-06-23', 'Dell Statement Credit Benefit', NULL, 0),

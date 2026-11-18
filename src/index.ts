@@ -1,3 +1,5 @@
+import { purposeEnv, requestPurpose, PURPOSES } from './purpose';
+import * as purposeSetup from './routes/purpose-setup';
 import * as accountBonuses from './routes/account-bonuses';
 import { householdConfig, listPeople, savePerson, reorderPeople } from './people';
 import { ACCOUNT_TYPES, ACCOUNT_GROUPS } from '../public/account-types.js';
@@ -39,6 +41,10 @@ type Handler = (c: {
 }) => Promise<Response>;
 
 const ROUTES: Array<[method: string, path: RegExp, handler: Handler]> = [
+  ["GET", /^\/connections$/, ({env,config}) => purposeSetup.connections(env,config)],
+  ["GET", /^\/account-setup$/, ({env,config,url}) => purposeSetup.setup(env,config,url)],
+  ["PUT", /^\/account-setup$/, ({env,request}) => purposeSetup.classify(env,request)],
+  ["PUT", /^\/accounts\/(\d+)\/purpose$/, ({env,request,params}) => purposeSetup.classify(env,request,Number(params[0]))],
   ["GET", /^\/account-bonuses$/, ({env,config,url}) => accountBonuses.list(env,config,url)],
   ["PUT", /^\/accounts\/(\d+)\/lifecycle$/, ({env,request,params}) => accountBonuses.saveLifecycle(env,request,Number(params[0]))],
   ["POST", /^\/account-bonuses\/offers$/, ({env,request}) => accountBonuses.saveOffer(env,request)],
@@ -162,7 +168,17 @@ export default {
         const refusal = await budgetRefusal(env);
         if (refusal) return json({ detail: refusal }, 429);
       }
-      return await hit[2]({ env: { ...env, DB: counted.db }, config, request, url, params: hit[1]!.slice(1), ctx, email: auth.email });
+      const purpose=requestPurpose(request);
+      const neutral=url.pathname==='/account-setup'||/\/purpose$/.test(url.pathname)||url.pathname.startsWith('/link/')||['/connections','/capacity','/sync-request','/statements/off','/investments/off','/link/statements/complete','/link/investments/complete'].includes(url.pathname)||(request.method==='POST'&&url.pathname==='/accounts');
+      const context={...env,DB:counted.db,PURPOSE:purpose};
+      const scoped=neutral?context:purposeEnv(context,purpose);
+      if(!neutral&&request.method==='GET'&&/^\/audit(?:\/|$)/.test(url.pathname)){
+        const dirty=await scoped.DB.prepare("SELECT key,value FROM app_state WHERE key='audit_purpose_dirty' AND value='1'").all();
+        if(dirty.results.length){await refreshTotals(scoped);await scoped.DB.prepare("UPDATE app_state SET value=NULL WHERE key='audit_purpose_dirty'").run();}
+      }
+      const response=await hit[2]({env:scoped,config,request,url,params:hit[1]!.slice(1),ctx,email:auth.email});
+      const headers=new Headers(response.headers);headers.set('x-minty-purpose',purpose);
+      return new Response(response.body,{status:response.status,headers});
     } catch (e) {
       if (e instanceof HttpError) return json({ detail: e.detail }, e.status);
       if (e instanceof ConfigError) return json({ detail: e.message }, 500);
@@ -209,7 +225,7 @@ export default {
       const irs = await refreshIrsLimits(env).catch((e) => ({ failed: e instanceof Error ? e.message : String(e) }));
       if (Object.keys(irs).length) console.log("irs limits", JSON.stringify(irs));
       // A correction made on the audit shows within minutes, not at the next hourly run.
-      const totals = await refreshTotals(env).catch((e) => {
+      const totals = await Promise.all(PURPOSES.map(p=>refreshTotals(purposeEnv(env,p)))).then(r=>r[0]).catch((e) => {
         console.error("monthly totals failed:", e instanceof Error ? e.message : e);
         return null;
       });
@@ -234,8 +250,8 @@ export default {
       if (keys && (keys.rekeyed || keys.previous || keys.neither)) console.log("token key", JSON.stringify(keys));   // counts only
       // CFA (docs/cfa.md): today's balances, and the monthly totals where something changed. After
       // sync, so they include this run's transactions; all SQL, so it costs the Worker no CPU to speak of.
-      await snapshotBalances(env).catch((e) => console.error("balance snapshots failed:", e instanceof Error ? e.message : e));
-      const totals = await refreshTotals(env).catch((e) => {
+      await Promise.all(PURPOSES.map(p=>snapshotBalances(purposeEnv(env,p)))).catch((e) => console.error("balance snapshots failed:", e instanceof Error ? e.message : e));
+      const totals = await Promise.all(PURPOSES.map(p=>refreshTotals(purposeEnv(env,p)))).then(r=>r[0]).catch((e) => {
         console.error("monthly totals failed:", e instanceof Error ? e.message : e);
         return null;
       });

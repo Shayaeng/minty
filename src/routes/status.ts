@@ -1,9 +1,10 @@
+import { rawDatabase } from '../purpose';
 import type { Env } from "../env";
 import { type Config, keyState, secretNames } from "../config";
 import { fernetDecrypt, fernetEncrypt } from "../fernet";
 import { plaidHost } from "../plaid";
 import { json } from "../http";
-import { bankHealth, bankRows, syncHealth } from "../health";
+import { bankHealth, bankRows, connectionRows, syncHealth } from "../health";
 import { DEFAULT_READ_BUDGET, LIMITERS, readBudget, readsToday } from "../limits";
 import { tokenKeys } from "../token-key";
 
@@ -11,7 +12,7 @@ import { tokenKeys } from "../token-key";
  * every API route; reports only whether things are set, never values. */
 
 /** Must list every file in d1/migrations (a test checks this). */
-export const EXPECTED_MIGRATIONS = ["0001_init.sql", "0002_sync_pages.sql", "0003_account_owner.sql", "0004_sync_restart.sql", "0005_bank_health.sql", "0006_card_benefits.sql", "0007_read_indexes.sql", "0008_app_state.sql", "0009_link_sessions.sql", "0010_card_statements.sql", "0011_bills.sql", "0012_point_balances.sql", "0013_audit.sql", "0014_audit_views.sql", "0015_investments.sql", "0016_statement_marks.sql", "0017_account_names.sql", "0018_statement_estimated.sql", "0019_analytics_exclusions.sql", "0020_txn_category_index.sql", "0021_manual_accounts.sql", "0022_account_people.sql", "0023_household_people.sql", "0024_authorized_date.sql", "0025_benefit_credit_periods.sql", "0026_account_bonuses.sql", "0027_bonus_payment_unknowns.sql"];
+export const EXPECTED_MIGRATIONS = ["0001_init.sql", "0002_sync_pages.sql", "0003_account_owner.sql", "0004_sync_restart.sql", "0005_bank_health.sql", "0006_card_benefits.sql", "0007_read_indexes.sql", "0008_app_state.sql", "0009_link_sessions.sql", "0010_card_statements.sql", "0011_bills.sql", "0012_point_balances.sql", "0013_audit.sql", "0014_audit_views.sql", "0015_investments.sql", "0016_statement_marks.sql", "0017_account_names.sql", "0018_statement_estimated.sql", "0019_analytics_exclusions.sql", "0020_txn_category_index.sql", "0021_manual_accounts.sql", "0022_account_people.sql", "0023_household_people.sql", "0024_authorized_date.sql", "0025_benefit_credit_periods.sql", "0026_account_bonuses.sql", "0027_bonus_payment_unknowns.sql", "0028_account_purposes.sql"];
 
 interface Check { id: string; ok: boolean; level: "error" | "warn"; message: string; fix?: string }
 
@@ -80,7 +81,7 @@ export async function status(env: Env, config: Config, email: string): Promise<R
     } else if (env.TOKEN_ENC_KEY_PREVIOUS.trim() === (env.TOKEN_ENC_KEY ?? "").trim()) {
       add({ id: "token_key_previous", ok: false, level: "warn", message: "TOKEN_ENC_KEY_PREVIOUS is the same as TOKEN_ENC_KEY, so the key isn't being changed.", fix: fixDelete });
     } else {
-      const k = await tokenKeys(env);
+      const k = await tokenKeys({...env,DB:rawDatabase(env.DB)});
       const banks = (n: number) => `${n} bank${n === 1 ? "" : "s"}`;
       add(k.previous
         ? { id: "token_key_previous", ok: false, level: "warn",
@@ -140,7 +141,8 @@ export async function status(env: Env, config: Config, email: string): Promise<R
         fix: "Redeploy (npm run deploy applies migrations), or run: npx wrangler d1 migrations apply DB --remote" }
     : { id: "migrations", ok: true, level: "error", message: "Database schema is up to date." });
 
-  const { results: counts } = await env.DB.prepare("SELECT status, count(*) AS n FROM items GROUP BY status")
+  // Shared connection counts describe Plaid logins, never one-per-account manual items.
+  const { results: counts } = await rawDatabase(env.DB).prepare("SELECT status, count(*) AS n FROM items WHERE status != 'manual' GROUP BY status")
     .all<{ status: string; n: number }>().catch(() => ({ results: [] as { status: string; n: number }[] }));
   const byStatus = Object.fromEntries(counts.map((r) => [r.status, r.n]));
   // Plaid keys for someone who isn't in MINTY_USERS (e.g. set up for a second person who was never
@@ -158,7 +160,7 @@ export async function status(env: Env, config: Config, email: string): Promise<R
 
   // Banks whose credential set is gone (person removed from MINTY_USERS, slot removed from
   // PLAID_SLOTS) or has no keys any more: sync skips them, so say so instead of failing silently.
-  const { results: perAccount } = await env.DB.prepare(
+  const { results: perAccount } = await rawDatabase(env.DB).prepare(
     "SELECT plaid_account, count(*) AS n FROM items WHERE status IN ('good', 'login_required') GROUP BY plaid_account",
   ).all<{ plaid_account: string; n: number }>().catch(() => ({ results: [] as { plaid_account: string; n: number }[] }));
   const stranded = perAccount.filter((r) => !config.accountOwner.has(r.plaid_account) || keyState(env, config, r.plaid_account) !== "set");
@@ -217,7 +219,7 @@ export async function status(env: Env, config: Config, email: string): Promise<R
 
   // Per bank, the same verdict the dashboard shows (src/health.ts): sign in again, broken,
   // stalled, consent ending soon, or still downloading. Stranded banks are listed above.
-  const rows = await bankRows(env).catch(() => []);
+  const rows = await connectionRows(env).catch(() => []);
   for (const r of rows) {
     const h = bankHealth(env, config, r);
     if (!h.level || h.state === "stranded") continue;

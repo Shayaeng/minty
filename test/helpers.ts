@@ -48,7 +48,8 @@ export const getJson = async <T = any>(path: string, init?: Parameters<typeof ca
   return { status: r.status, body: (await r.json()) as T };
 };
 
-/** Wipe and load a small fixture: 2 items, 3 accounts, 5 transactions, some tags. */
+/** Wipe and load an explicitly classified Personal fixture. Production migration leaves
+ * existing accounts Unclassified; these historical tests choose their purpose explicitly. */
 export async function loadFixture(): Promise<void> {
   const db = env.DB;
   await db.batch([
@@ -59,10 +60,10 @@ export async function loadFixture(): Promise<void> {
     db.prepare(`INSERT INTO items (id, owner, plaid_account, plaid_item_id, access_token_enc, institution_name, updated_at)
                 VALUES (1, 'me', 'me_primary', 'item-1', 'gAAAA-not-a-real-token', 'Chase', '2026-09-01T00:00:00.000Z'),
                        (2, 'spouse', 'spouse_primary', 'item-2', 'gAAAA-not-a-real-token', 'Ally', '2026-09-01T00:00:00.000Z')`),
-    db.prepare(`INSERT INTO accounts (id, owner, item_id, plaid_account_id, name, mask, type, subtype, balance_current_cents, balance_available_cents, currency)
-                VALUES (10, 'me', 1, 'acct-10', 'Sapphire', '9912', 'credit', 'credit card', 128455, NULL, 'USD'),
-                       (11, 'me', 1, 'acct-11', 'Checking', '4821', 'depository', 'checking', 624018, 624018, 'USD'),
-                       (20, 'spouse', 2, 'acct-20', 'Savings', '2290', 'depository', 'savings', 2250000, 2250000, 'USD')`),
+    db.prepare(`INSERT INTO accounts (purpose,id, owner, item_id, plaid_account_id, name, mask, type, subtype, balance_current_cents, balance_available_cents, currency)
+                VALUES ('personal',10, 'me', 1, 'acct-10', 'Sapphire', '9912', 'credit', 'credit card', 128455, NULL, 'USD'),
+                       ('personal',11, 'me', 1, 'acct-11', 'Checking', '4821', 'depository', 'checking', 624018, 624018, 'USD'),
+                       ('personal',20, 'spouse', 2, 'acct-20', 'Savings', '2290', 'depository', 'savings', 2250000, 2250000, 'USD')`),
     db.prepare(`INSERT INTO transactions (id, owner, account_id, plaid_txn_id, amount_cents, currency, date, name, merchant_name, category, pending)
                 VALUES (100, 'me', 10, 'txn-100', 8412, 'USD', '2026-09-20', 'WHOLE FOODS', 'Whole Foods Market', 'FOOD_AND_DRINK', 0),
                        (101, 'me', 10, 'txn-101', 5240, 'USD', '2026-09-19', 'Shell', 'Shell', 'TRANSPORTATION', 1),

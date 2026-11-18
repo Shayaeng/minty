@@ -348,6 +348,7 @@ export function demoEnv(d: DemoData): Record<string, string> {
 /** INSERT statements (SQL with ? placeholders, values) for the data, parents first. */
 export function statements(d: DemoData): [string, (string | number | null)[]][] {
   const ins = (table: string, rows: Record<string, string | number | null>[]) => rows.map((r): [string, (string | number | null)[]] => {
+    if (["accounts","bills","point_balances"].includes(table)) r={...r,purpose:"personal"};
     const cols = Object.keys(r);
     return [`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`, cols.map((c) => r[c])];
   });

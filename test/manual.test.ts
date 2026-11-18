@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { call, getJson, loadFixture } from './helpers';
 
 beforeEach(loadFixture);
-const account = { owner: 'me', name: 'Unsupported bank', type: 'depository', currency: 'USD', balance_cents: 12345 };
+const account = {purpose:'personal', owner: 'me', name: 'Unsupported bank', type: 'depository', currency: 'USD', balance_cents: 12345 };
 const save = (path: string, body: unknown, method = 'POST') => getJson(path, { method, body: JSON.stringify(body) });
 
 it('creates and updates a persistent manual balance without treating it as a Plaid connection', async () => {

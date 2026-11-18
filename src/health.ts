@@ -1,4 +1,5 @@
 import type { Env } from "./env";
+import { purposeEnv, rawDatabase } from './purpose';
 import { type Config, keyState } from "./config";
 
 /** Bank health: one verdict per bank (Plaid Item), shared by the dashboard (/items, /health) and
@@ -205,4 +206,12 @@ export function syncHealth(env: Env, config: Config, rows: BankRow[], now = Date
 
 export async function bankRows(env: Env): Promise<BankRow[]> {
   return (await env.DB.prepare(`${BANK_ROWS_SQL} WHERE i.status != 'manual' ORDER BY i.owner, i.id`).all<BankRow>()).results;
+}
+
+/** Connection administration is shared, but transaction counts in its diagnostics are not. */
+export async function connectionRows(env:Env):Promise<BankRow[]>{
+  const global={...env,DB:rawDatabase(env.DB)};
+  const [all,selected]=await Promise.all([bankRows(global),bankRows(purposeEnv(global))]);
+  const counts=new Map(selected.map(r=>[r.id,r.txns]));
+  return all.map(r=>({...r,txns:counts.get(r.id)??0}));
 }

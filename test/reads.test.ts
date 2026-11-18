@@ -54,7 +54,7 @@ beforeAll(async () => {
   const names = ["Business Platinum Card®", "Business Platinum Card®", "Charles Schwab Platinum Card®", "Business Gold Card", "Business Gold Card",
     "Blue Business Plus Card", "Credit Card - 1234", ...Array.from({ length: 21 }, (_, k) => `Card ${k}`)];
   await db.batch(names.map((n, i) => db.prepare(
-    `INSERT INTO accounts (id, owner, item_id, plaid_account_id, name, mask, type, subtype) VALUES (?, 'me', ?, ?, ?, ?, 'credit', 'credit card')`)
+    `INSERT INTO accounts (purpose,id, owner, item_id, plaid_account_id, name, mask, type, subtype) VALUES ('personal',?, 'me', ?, ?, ?, ?, 'credit', 'credit card')`)
     .bind(i + 1, i < 6 ? 1 : i === 6 ? 3 : 2 + (i % 6), `acct-${i}`, n, String(9000 + i))));
   const merchants = ["WHOLE FOODS", "Uber", "GRUBHUB*ORDER", "Staples", "DELL INC", "Platinum Resy Credit", "FLEXIBLE BUSINESS CREDIT",
     "AMEX Wireless Credit", "T-Mobile", "Hilton", "Walmart", "Shell", "Amazon", "Target", "Annual Travel/dining Credit (p To $325)"];
@@ -91,9 +91,9 @@ beforeAll(async () => {
   await db.prepare(`INSERT INTO net_worth (date, owner, assets_cents, debts_cents)
     SELECT date('now', '-' || d.value || ' days'), o.value, 1000000 + d.value, 50000 FROM json_each('${JSON.stringify([...Array(400).keys()])}') d, json_each('["me","spouse"]') o`).run();
   // EGG: three retirement accounts with a year of daily balances and two years of contributions.
-  await db.prepare(`INSERT INTO accounts (id, owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents)
-    VALUES (901, 'me', 8, 'ret-1', '401(k)', 'investment', '401k', 10000000), (902, 'me', 8, 'ret-2', 'Roth IRA', 'investment', 'roth', 3000000),
-           (903, 'me', 8, 'ret-3', 'HSA', 'investment', 'hsa', 500000)`).run();
+  await db.prepare(`INSERT INTO accounts (purpose,id, owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents)
+    VALUES ('personal',901, 'me', 8, 'ret-1', '401(k)', 'investment', '401k', 10000000), ('personal',902, 'me', 8, 'ret-2', 'Roth IRA', 'investment', 'roth', 3000000),
+           ('personal',903, 'me', 8, 'ret-3', 'HSA', 'investment', 'hsa', 500000)`).run();
   await db.prepare(`INSERT INTO balance_snapshots (account_id, date, current_cents)
     SELECT a.value, date('now', '-' || d.value || ' days'), 1000000 + d.value FROM json_each('[901,902,903]') a, json_each('${JSON.stringify([...Array(365).keys()])}') d`).run();
   await db.prepare(`INSERT INTO investment_txns (account_id, plaid_inv_txn_id, date, name, type, subtype, amount_cents)
@@ -107,16 +107,16 @@ beforeAll(async () => {
 
 describe("D1 rows read per request (budgets)", () => {
   it.each([
-    ["/benefits", 3000],                 // only the tracked cards' rows, once each (the first version read every row once per pattern)
+    ["/benefits", 4500],                 // tracked cards only, plus purpose membership checks by account primary key
     ["/statements", 100],                // one row per bank
     ["/bills", 9000],                    // 28 cards x 12 statements (each window an index range: an OR there read 85,000), plus 40 own bills
     ["/health", 100],
     ["/items", 100],
-    ["/transactions", 2500],             // newest 500, via the date index
-    ["/transactions?before=2025-06-01:3000", 2500],   // the next page, via the same index
+    ["/transactions", 3200],             // newest 500, date index plus per-row purpose membership checks
+    ["/transactions?before=2025-06-01:3000", 3200],   // the next page, via the same index
     ["/transactions?category=FOOD_AND_DRINK", 2500],   // a category: the newest 500 of it
-    ["/accounts", 3500],                 // card members: only accounts that have some
-    ["/status", 3500],
+    ["/accounts", 5500],                 // card members only; account purpose checked for each member transaction
+    ["/status", 5500],
     ["/tags", 100],
     ["/users", 10],
     ["/capacity", 100],
@@ -172,13 +172,14 @@ describe("D1 rows read by the audit's cron step (docs/cfa.md, C1)", () => {
     // 10.9 when written: monthly totals ~3 (the scan, and the grouping's sort, which D1 counts
     // again; the pair probe reads the index only, accounts are read once), recurring charges ~8
     // (a year of spending through two window sorts). Weekly, so ~80,000 rows a week here.
-    expect(full.tally.rows).toBeLessThanOrEqual(12 * n);
+    // Purpose views add indexed account membership checks; still linear, never a household scan per row.
+    expect(full.tally.rows).toBeLessThanOrEqual(13 * n);
     const quiet = counting(env.DB);
     expect(await refreshTotals({ ...E, DB: quiet.db })).toEqual({ from: null, full: false });
-    expect(quiet.tally.rows).toBeLessThanOrEqual(12);
+    expect(quiet.tally.rows).toBeLessThanOrEqual(16); // two indexed purpose checks on the latest-transaction probe
     const snap = counting(env.DB);
     await snapshotBalances({ ...E, DB: snap.db }, new Date("2026-10-15T12:00:00Z"));   // midday: the first run after midnight also thins old snapshots
-    expect(snap.tally.rows).toBeLessThanOrEqual(200);              // one row per account, plus each one's snapshot by its key
+    expect(snap.tally.rows).toBeLessThanOrEqual(240);              // account purpose checks plus each snapshot by primary key
   });
 
   it("with a tag and a bank left out, a rebuild costs about the same; net worth's history rebuilt once", async () => {

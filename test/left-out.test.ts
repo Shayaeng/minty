@@ -28,8 +28,8 @@ beforeEach(async () => {
   bank = await item("Chase"); other = await item("Amex");
   acct = {};
   for (const [key, it, type] of [["checking", bank, "depository"], ["card", bank, "credit"], ["amex", other, "credit"]] as const) {
-    acct[key] = (await db.prepare(`INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents)
-      VALUES ('me', ?, ?, ?, ?, ?, ?) RETURNING id`).bind(it, key, key, type, type === "credit" ? "credit card" : "checking", type === "credit" ? 20000 : 500000).first<{ id: number }>())!.id;
+    acct[key] = (await db.prepare(`INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents)
+      VALUES ('personal','me', ?, ?, ?, ?, ?, ?) RETURNING id`).bind(it, key, key, type, type === "credit" ? "credit card" : "checking", type === "credit" ? 20000 : 500000).first<{ id: number }>())!.id;
   }
   await txn("card", "2026-09-03", 5000, "FOOD_AND_DRINK", "Cafe");
   await txn("card", "2026-09-04", 70000, "GENERAL_MERCHANDISE", "Laptop for the office", ["sync"]);
@@ -88,8 +88,8 @@ describe("leaving things out of the numbers", () => {
   });
 
   it("EGG lists a left-out retirement account, and counts none of it", async () => {
-    const ira = (await db.prepare(`INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents)
-      VALUES ('me', ?, 'ira', 'IRA', 'investment', 'ira', 900000) RETURNING id`).bind(other).first<{ id: number }>())!.id;
+    const ira = (await db.prepare(`INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype, balance_current_cents)
+      VALUES ('personal','me', ?, 'ira', 'IRA', 'investment', 'ira', 900000) RETURNING id`).bind(other).first<{ id: number }>())!.id;
     await db.prepare("INSERT INTO balance_snapshots (account_id, date, current_cents) VALUES (?, '2026-09-01', 880000)").bind(ira).run();
     expect((await getJson<any>("/retirement")).body.snapshots).toHaveLength(1);
     await send({ kind: "bank", value: other, left_out: true });

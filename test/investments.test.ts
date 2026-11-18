@@ -187,7 +187,7 @@ describe("the cron's investments fetch", () => {
 describe("islanding: retirement accounts show in EGG, not on the dashboard", () => {
   async function seed() {
     const id = await addItem({ products: "transactions" });
-    const ins = db.prepare("INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype) VALUES ('me', ?, ?, ?, ?, ?) RETURNING id");
+    const ins = db.prepare("INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype) VALUES ('personal','me', ?, ?, ?, ?, ?) RETURNING id");
     const ids: Record<string, number> = {};
     for (const [key, type, subtype] of [["checking", "depository", "checking"], ["hsa", "depository", "hsa"], ["ira", "investment", "ira"], ["brokerage", "investment", "brokerage"]]) {
       ids[key] = (await ins.bind(id, key, key, type, subtype).first<{ id: number }>())!.id;
@@ -242,7 +242,7 @@ describe("health of an Investments-only bank", () => {
   it("GET /investments lists every bank with its Investments status and retirement accounts", async () => {
     const id = await addItem();
     await db.prepare("INSERT INTO investment_sync (item_id, status) VALUES (?, 'ready')").bind(id).run();
-    await db.prepare("INSERT INTO accounts (owner, item_id, plaid_account_id, name, type, subtype) VALUES ('me', ?, 'x', 'IRA', 'investment', 'ira')").bind(id).run();
+    await db.prepare("INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type, subtype) VALUES ('personal','me', ?, 'x', 'IRA', 'investment', 'ira')").bind(id).run();
     expect((await getJson<any[]>("/investments")).body).toEqual([expect.objectContaining({ item_id: id, bank: "Schwab", products: "investments", investments: "ready", retirement_accounts: 1, investment_accounts: 1 })]);
   });
 });

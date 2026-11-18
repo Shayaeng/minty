@@ -174,18 +174,27 @@ describe("POST /link/exchange", () => {
     expect(plaid.paths()).toEqual(["/item/public_token/exchange", "/transactions/sync"]);
     expect(plaid.calls.every((c) => c.clientId === "cid_me_backup")).toBe(true);
     expect(plaid.calls[1].body.access_token).toBe("access-sandbox-secret");
+    expect((await getJson("/transactions")).body).toEqual([]);
+    expect((await getJson("/transactions", {headers:{'x-minty-purpose':'churning'}})).body).toEqual([]);
+    const setup=(await getJson('/account-setup')).body.accounts;
+    expect(setup).toHaveLength(1);
+    expect(setup[0].purpose).toBeNull();
+    expect((await getJson('/account-setup',{method:'PUT',body:JSON.stringify({accounts:[{id:setup[0].id,purpose:'personal'}]})})).status).toBe(200);
     expect((await getJson("/transactions")).body.map((t: any) => t.plaid_txn_id)).toEqual(["t1"]);
   });
 
   it("re-linking the same Item refreshes its token instead of duplicating it", async () => {
-    plaid.syncPages.push(page("c1", false), page("c2", false));
+    plaid.syncPages.push(page("c1", false,{accounts:[account('relink-account')]}), page("c2", false,{accounts:[account('relink-account')]}));
     await post("/link/exchange", { session_id: await openSession("me", "me_primary"), public_token: "p1", institution_name: "Chase" });
+    const original=(await getJson('/account-setup')).body.accounts[0];
+    expect((await getJson(`/accounts/${original.id}/purpose`,{method:'PUT',body:JSON.stringify({purpose:'churning'})})).status).toBe(200);
     plaid.replies["/item/public_token/exchange"] = { body: { access_token: "access-sandbox-new", item_id: "plaid-item-1" } };
     await post("/link/exchange", { session_id: await openSession("me", "me_primary"), public_token: "p2" });
     const { results } = await env.DB.prepare("SELECT * FROM items").all<any>();
     expect(results).toHaveLength(1);
     expect(results[0].institution_name).toBe("Chase");                          // kept when not re-sent
     expect(await fernetDecrypt(results[0].access_token_enc, KEY)).toBe("access-sandbox-new");
+    expect((await env.DB.prepare('SELECT id,purpose FROM accounts').all()).results).toEqual([{id:original.id,purpose:'churning'}]);
   });
 
   it("explains a missing TOKEN_ENC_KEY before calling Plaid", async () => {

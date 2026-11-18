@@ -11,7 +11,7 @@ const tags = async (id: number) => (await db.prepare("SELECT tag FROM transactio
 beforeEach(async () => {
   await db.batch(["transaction_tags", "transactions", "accounts", "items"].map((t) => db.prepare(`DELETE FROM ${t}`)));
   const item = (await db.prepare("INSERT INTO items (owner, plaid_account, plaid_item_id, access_token_enc) VALUES ('me', 'me_primary', 'i', 'x') RETURNING id").first<{ id: number }>())!.id;
-  const acct = (await db.prepare("INSERT INTO accounts (owner, item_id, plaid_account_id, name, type) VALUES ('me', ?, 'a', 'Card', 'credit') RETURNING id").bind(item).first<{ id: number }>())!.id;
+  const acct = (await db.prepare("INSERT INTO accounts (purpose,owner, item_id, plaid_account_id, name, type) VALUES ('personal','me', ?, 'a', 'Card', 'credit') RETURNING id").bind(item).first<{ id: number }>())!.id;
   ids = [];
   for (let i = 0; i < 4; i++) {
     ids.push((await db.prepare("INSERT INTO transactions (owner, account_id, plaid_txn_id, amount_cents, date, name) VALUES ('me', ?, ?, 100, '2026-10-01', 'AMEX') RETURNING id")
