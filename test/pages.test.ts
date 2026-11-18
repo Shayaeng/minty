@@ -246,7 +246,8 @@ describe("static pages", () => {
 
   it("the Select Summary breaks the selection down in a bar chart: by month, year, bank, card, person or tag, split by another", async () => {
     const { html } = await page("/");
-    expect(html).toContain('const BREAK = [["month", "Month"], ["year", "Year"], ["bank", "Bank"], ["card", "Card"], ["person", "Person"], ["tag", "Tag"]];');
+    expect(html).toContain('const BREAK = [["month", "Month"], ["year", "Year"], ["bank", "Bank"], ["card", "Card"], ["member", "Card member"], ["person", "Person"], ["tag", "Tag"]];');
+    expect(html).toContain("if (!rows.some(t => t.account_owner)) n.member = 0;");   // offered only with card members in the selection
     expect(html).toContain("C.barchart(chart, {");
     expect(html).toContain('n.person > 1 && by !== "person" ? "person" : n.tag > 1 && by !== "tag" ? "tag" : "none"');   // split by people, else tags
     const charts = await fetchText("/charts.js");
@@ -265,6 +266,38 @@ describe("static pages", () => {
     const { html } = await page("/");
     expect(html).toContain("for (const box of el.querySelectorAll(\"input[type=checkbox]\")) box.checked = box.defaultChecked;");
     expect(html).not.toContain("opts.dataset.html !== html");                              // every list goes through fillOpts
+  });
+
+  it("ABC lists each benefit's credits with Count in, to put one in another period", async () => {
+    const abc = await fetchText("/abc.js");
+    expect(abc).toContain("function creditsHTML(c, b)");
+    expect(abc).toContain('put("/benefits/credits", {');
+  });
+
+  it("the dashboard's area chart says what it shows, for the range picked", async () => {
+    const { html } = await page("/");
+    expect(html).toContain('`${what} each day · last 30 days` : `${what} each month');
+    expect(await fetchText("/charts.js")).toContain('<div class="ia-label"></div>');
+  });
+
+  it("the dashboard cards show this month's running total against this year's average month", async () => {
+    const { html } = await page("/");
+    expect(html).toContain("pace: cardDays ? paceOf(k, s, L, day, dim, A) : null,");
+    // the % is the pace against an average month this year; last year's month is the grey area
+    expect(html).toContain("delta: vs ? pace / A.avg - 1 : null,");
+    expect(html).toContain("cardLastYear = l?.people ?? null;");
+    expect(html).toMatch(/split: "owner"/);                                               // one request for every card's days
+    const charts = await fetchText("/charts.js");
+    expect(charts).toContain('<path class="sc-avgline"');
+  });
+
+  it("the Select Summary has an Off by box: refunds short by a set amount, like a cancellation fee", async () => {
+    const { html } = await page("/");
+    expect(html).toContain('<input id="spOffBy" type="text" inputmode="decimal"');
+    expect(html).toContain("R.summarize(rows, { offBy: sumOffBy })");
+    expect(await fetchText("/reconcile.js")).toContain("const lessFee = [];");
+    expect(await fetchText("/reconcile.js")).toContain("const chains = [];");               // changed (up or down), then refunded
+    expect(html).toContain("chains: s.chains.flatMap(c => [c.charge.id, c.change.id, c.refund.id])");
   });
 
   it("pull to refresh asks for a sync like the logo, and never syncs itself", async () => {
@@ -365,6 +398,15 @@ describe("static pages", () => {
     expect(r.status).toBe(403);
     expect((await SELF.fetch("https://minty.example.workers.dev/healthz")).status).toBe(200);
     expect((await SELF.fetch("https://minty.example.workers.dev/health")).status).toBe(403);   // in run_worker_first
+  });
+});
+
+describe("a refused sign-in on the dashboard", () => {
+  it("shows the API's reason (e.g. not in ALLOWED_LOGINS) instead of sample data, which would look like an empty Minty", async () => {
+    const html = await fetchText("/app.js");
+    expect(html).toContain("if (res.status === 401 || res.status === 403) {");
+    expect(html).toContain("notice(refusedText(refused));");
+    expect(html).toContain("can add this email to the Worker's ALLOWED_LOGINS variable");
   });
 });
 

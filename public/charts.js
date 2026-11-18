@@ -128,13 +128,14 @@
 
   /** An interactive area chart: range buttons that morph the line, and a scrubbing tooltip.
    *  o: { title, ranges: [{ key, label, points: [{ label, axis, value }] }], range, fmt, fmtAxis,
-   *       head(i | null, range) → { value, delta, good, deltaText, caption }, onPoint(i | null, range), onRange(range), height } */
+   *       head(i | null, range) → { value, delta, good, deltaText, caption }, onPoint(i | null, range), onRange(range),
+   *       plotLabel(range) → what the plot shows, height } */
   function area(el, o) {
     const id = `ia${++uid}`, H = o.height ?? 230, P = { t: 14, r: 10, b: 24, l: 46 }, N = 72;
     const fmtAxis = o.fmtAxis ?? o.fmt;
     el.classList.add("ia");
     el.innerHTML = `<div class="ia-head"><div class="ia-title">${esc(o.title)}</div><div class="ia-value num"></div><div class="ia-sub"></div></div>
-      <div class="ia-plot"><svg class="ia-svg" height="${H}" tabindex="0" role="img" aria-label="${esc(o.title)}: use the arrow keys to read each point">
+      <div class="ia-plot"><div class="ia-label"></div><svg class="ia-svg" height="${H}" tabindex="0" role="img" aria-label="${esc(o.title)}: use the arrow keys to read each point">
         <defs><linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".2"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient>
         <clipPath id="${id}c"><rect x="0" y="0" height="${H}" width="0"/></clipPath></defs>
         <g class="ia-grid"></g><g clip-path="url(#${id}c)"><path class="ia-area" fill="url(#${id}g)"/><path class="ia-line"/></g>
@@ -168,6 +169,8 @@
       gEl.innerHTML = g;
       gEl.classList.remove("in"); void gEl.getBoundingClientRect(); gEl.classList.add("in");
     }
+    // a small label over the plot saying what it shows ("Spent each month · last 12 months")
+    const label = () => { const t = o.plotLabel?.(cur) ?? ""; const l = $(".ia-label"); l.textContent = t; l.hidden = !t; };
     function head(i) {
       const h = o.head(i, cur) ?? {};
       $(".ia-value").textContent = h.value === undefined ? "" : o.fmt(h.value);
@@ -208,12 +211,12 @@
       const from = drawn.slice(), to = R[key].ny;
       stop();
       stop = tween(550, t => { for (let k = 0; k < N; k++) drawn[k] = from[k] + (to[k] - from[k]) * t; paths(); }, easeInOut);
-      grid(); show(null);
+      grid(); show(null); label();
       o.onRange?.(key);
     }
     size();
     if (!W) { W = 320; svg.setAttribute("width", W); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); $(".ia-hit").setAttribute("width", W); }
-    drawn = R[cur].ny.slice(); paths(); grid(); head(null);
+    drawn = R[cur].ny.slice(); paths(); grid(); head(null); label();
     const placeThumb = segpill($(".ia-ranges"));
     tween(1100, t => clip.setAttribute("width", f1(t * W)), easeInOut);
     el.querySelector(".ia-ranges").addEventListener("click", e => { const b = e.target.closest("[data-r]"); if (b) setRange(b.dataset.r); });
@@ -351,14 +354,50 @@
   /** A stat card's HTML: label, a change pill, the number, a caption and a sparkline. wire() then
    *  makes the number count up and the sparkline scrub (pointer, or the arrow keys).
    *  o: { label, value, fmt, delta, goodWhen: "up" | "down", deltaText, caption, trend: [numbers],
-   *       labels: [strings], dot (a colour), tag, attrs, cls, countUp, touch (scrub by touch too) } */
+   *       labels: [strings], dot (a colour), tag, attrs, cls, countUp, touch (scrub by touch too),
+   *       bars (a bar per point from 0, with trendTitle and fmtAxis for its scale; lastPartial: the last one is still filling),
+   *       pace: { days: [running total by day, to today], dim (days in the month), avg, avgLabel, title, labels,
+   *               last: [the same month last year, running, by day] (a grey area behind), lastLabel } } */
   const STATS = new Map();
   function stat(o) {
     const id = `sc${++uid}`, tag = o.tag ?? "div";
     STATS.set(id, o);
     let spark = "";
     const v = o.trend ?? [];
-    if (v.length >= 2) {
+    if (o.pace) {
+      // this month's running total by day (solid, to today) against an average month spent evenly
+      // (dashed, from $0 to the average by the month's end): ahead of it or behind, at a glance. Behind
+      // them, light grey, the same month last year.
+      const P = o.pace, Hs = 44, dim = P.dim, n = P.days.length;
+      const hi = Math.max(1, P.avg ?? 0, ...P.days, ...(P.last ?? [])) * 1.1;
+      const x = i => (dim <= 1 ? 0 : (i / (dim - 1)) * 100), y = val => Hs - 2 - (val / hi) * (Hs - 6);
+      const pts = P.days.map((val, i) => [x(i), y(val)]);
+      const line = pts.length > 1 ? monotone(pts) : "";
+      const avgY = P.avg ? y(P.avg) : null, last = pts.at(-1) ?? [0, y(0)];
+      const ly = P.last?.length > 1 ? monotone(P.last.map((val, i) => [x(i), y(val)])) : "";
+      const key = ly && P.lastLabel ? `<span class="sc-lykey"><i></i>${esc(P.lastLabel)}</span>` : "";
+      const tt = key ? `<span class="sc-tt sc-tt2"><span>${esc(P.title ?? "")}</span>${key}</span>` : P.title ? `<span class="sc-tt">${esc(P.title)}</span>` : "";
+      spark = `<div class="sc-spark sc-pace">${tt}
+        <div class="sc-plot"><svg viewBox="0 0 100 ${Hs}" preserveAspectRatio="none" aria-hidden="true">
+          ${ly ? `<path class="sc-ly" d="${ly}L${f1(x(P.last.length - 1))},${Hs}L0,${Hs}Z"/>` : ""}
+          ${avgY !== null ? `<path class="sc-avgline" d="M0,${f1(y(0))}L100,${f1(avgY)}" vector-effect="non-scaling-stroke"/>` : ""}
+          ${line ? `<path class="sc-area" d="${line}L${f1(last[0])},${Hs}L0,${Hs}Z" fill="currentColor" fill-opacity=".14"/><path class="sc-line" d="${line}" vector-effect="non-scaling-stroke"/>` : ""}</svg>
+          <i class="sc-last" style="left:${f1(last[0])}%;top:${f1((last[1] / Hs) * 100)}%"></i><i class="sc-cur" hidden></i><i class="sc-pt" hidden></i>
+          ${avgY !== null && P.avgLabel ? `<span class="sc-avg" style="top:${f1((avgY / Hs) * 100)}%">${esc(P.avgLabel)}</span>` : ""}</div>
+        <div class="sc-days"><span>1</span>${n > 1 && n < dim && x(n - 1) > 18 && x(n - 1) < 82 ? `<span style="left:${f1(x(n - 1))}%">today</span>` : ""}<span class="end">${dim}</span></div></div>`;
+      o._pts = pts.map(([px, py]) => [px, (py / Hs) * 100]);
+      o._pace = dim;
+      o.trend = P.days; o.labels = P.labels;
+    } else if (v.length >= 2 && o.bars) {
+      // a bar per point from $0, with a title and the scale's top and bottom: amounts, not just a shape
+      const Hs = 44, top = ticks(0, Math.max(1, ...v)).at(-1), slot = 100 / v.length, ax = o.fmtAxis ?? o.fmt;
+      const rects = v.map((x, i) => { const h = Math.max(x > 0 ? 1.5 : 0, (Math.max(0, x) / top) * Hs);
+        return `<rect class="sc-bar${i === v.length - 1 && o.lastPartial ? " now" : ""}" x="${f1(i * slot + slot * 0.16)}" y="${f1(Hs - h)}" width="${f1(slot * 0.68)}" height="${f1(h)}"/>`; }).join("");
+      spark = `<div class="sc-spark sc-bars">${o.trendTitle ? `<span class="sc-tt">${esc(o.trendTitle)}</span>` : ""}
+        <div class="sc-plot"><span class="sc-ax top">${esc(ax(top))}</span><span class="sc-ax bot">${esc(ax(0))}</span>
+        <svg viewBox="0 0 100 ${Hs}" preserveAspectRatio="none" aria-hidden="true">${rects}</svg></div></div>`;
+      o._bars = true;
+    } else if (v.length >= 2) {
       const lo = Math.min(...v), hi = Math.max(...v), Hs = 44;
       const pts = v.map((x, i) => [(i / (v.length - 1)) * 100, 6 + (1 - (x - lo) / (hi - lo || 1)) * (Hs - 12)]);
       const d = monotone(pts), last = pts.at(-1);
@@ -369,7 +408,7 @@
       o._pts = pts.map(([x, y]) => [x, (y / Hs) * 100]);
     }
     const good = o.delta !== null && o.delta !== undefined && isGood(o.delta, o.goodWhen ?? "up");
-    return `<${tag} class="sc${o.cls ? ` ${esc(o.cls)}` : ""}" data-sc="${id}"${o.attrs ? ` ${o.attrs}` : ""}${tag === "div" && v.length >= 2 ? ' tabindex="0"' : ""}>
+    return `<${tag} class="sc${o.cls ? ` ${esc(o.cls)}` : ""}" data-sc="${id}"${o.attrs ? ` ${o.attrs}` : ""}${tag === "div" && (v.length >= 2 || o.pace) ? ' tabindex="0"' : ""}>
       <span class="sc-top"><span class="sc-label">${o.dot ? `<i class="sc-dot" style="background:${esc(o.dot)}"></i>` : ""}${esc(o.label)}</span>${deltaHtml(o.delta, good, o.deltaText)}</span>
       <span class="sc-value num">${esc(o.fmt(o.value))}</span>
       <span class="sc-cap">${esc(o.caption ?? "")}</span>${spark}</${tag}>`;
@@ -383,20 +422,30 @@
       if (o.countUp !== false && Number.isFinite(o.value)) tween(1100, k => { valEl.textContent = o.fmt(o.value * k); });
       const sp = card.querySelector(".sc-spark");
       if (!sp) continue;
-      const cur = sp.querySelector(".sc-cur"), pt = sp.querySelector(".sc-pt"), n = o.trend.length;
+      const cur = sp.querySelector(".sc-cur"), pt = sp.querySelector(".sc-pt"), n = o.trend.length, bars = [...sp.querySelectorAll(".sc-bar")];
       let at = null;
       const show = i => {
-        if (i === null) { at = null; cur.hidden = pt.hidden = true; valEl.textContent = o.fmt(o.value); capEl.textContent = o.caption ?? ""; card.classList.remove("scrub"); return; }
+        if (i === null) {
+          at = null; if (cur) cur.hidden = pt.hidden = true; bars.forEach(r => r.classList.remove("on"));
+          valEl.textContent = o.fmt(o.value); capEl.textContent = o.caption ?? ""; card.classList.remove("scrub"); return;
+        }
         at = i = Math.max(0, Math.min(n - 1, i));
-        const [x, y] = o._pts[i];
-        cur.hidden = pt.hidden = false;
-        cur.style.left = pt.style.left = `${f1(x)}%`;
-        pt.style.top = `${f1(y)}%`;
+        if (o._bars) bars.forEach((r, j) => r.classList.toggle("on", j === i));
+        else {
+          const [x, y] = o._pts[i];
+          cur.hidden = pt.hidden = false;
+          cur.style.left = pt.style.left = `${f1(x)}%`;
+          pt.style.top = `${f1(y)}%`;
+        }
         valEl.textContent = o.fmt(o.trend[i]);
         capEl.textContent = o.labels?.[i] ?? "";
         card.classList.add("scrub");
       };
-      const idx = e => { const b = sp.getBoundingClientRect(); return Math.round(((e.clientX - b.left) / b.width) * (n - 1)); };
+      const idx = e => {
+        if (o._bars) { const b = sp.querySelector("svg").getBoundingClientRect(); return Math.floor(((e.clientX - b.left) / b.width) * n); }
+        if (o._pace) { const b = sp.querySelector("svg").getBoundingClientRect(); return Math.min(n - 1, Math.round(((e.clientX - b.left) / b.width) * (o._pace - 1))); }
+        const b = sp.getBoundingClientRect(); return Math.round(((e.clientX - b.left) / b.width) * (n - 1));
+      };
       card.addEventListener("pointermove", e => { if (e.pointerType !== "touch" || o.touch) show(idx(e)); });
       card.addEventListener("pointerleave", e => { if (e.pointerType !== "touch") show(null); });
       if (o.touch) { sp.style.touchAction = "pan-y"; card.addEventListener("pointerdown", e => { if (e.pointerType === "touch") show(idx(e)); }); }

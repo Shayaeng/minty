@@ -13,6 +13,7 @@ let selecting = false;             // Select mode: rows have checkboxes, and the
 let selected = new Set();          // transaction ids (numbers) selected
 let allTags = [];
 let offline = false;
+let refused = null;                    // the API refused this sign-in (403): its reason, shown instead of sample data
 
 const fmt = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
 // Plaid: POSITIVE amount = money OUT. Flip for display (spending negative/red, income positive/green).
@@ -76,6 +77,16 @@ async function load(more = false) {
       notice(d.detail || "Too many requests. Wait a minute and try again.");
       return;
     }
+    if (res.status === 401 || res.status === 403) {   // signed in, but refused: say why; sample data would look like an empty Minty
+      const d = await res.json().catch(() => ({}));
+      if (seq !== loadSeq) return;
+      refused = d.detail || `the API answered ${res.status}`;
+      offline = true; hasMore = false; loaded = [];
+      notice(refusedText(refused));
+      document.getElementById("ownerSeg").hidden = true;     // the preview's sample people, not this household's
+      render([]);
+      return;
+    }
     if (!res.ok) throw new Error(res.status);
     txns = await res.json();
     if (seq !== loadSeq) return;                     // filters changed meanwhile: a newer load wins
@@ -83,7 +94,7 @@ async function load(more = false) {
     if (!more) selected.clear();                     // new filters: a selection never hides off-screen
     txns = (more ? loaded : []).concat(txns.slice(0, PAGE));
     loaded = txns;
-    offline = false; banner(false);
+    offline = false; refused = null; banner(false); document.getElementById("ownerSeg").hidden = false;
     if (!more) refreshTags();
   } catch (e) {
     if (seq !== loadSeq) return;
@@ -347,6 +358,12 @@ function banner(show) {
   if (show) b.textContent = "Showing sample data — couldn't reach the API. Deploy this file behind the Minty API to see live transactions.";
 }
 
+/** Why the API refused this sign-in, in plain words (src/access.ts says which check failed). */
+function refusedText(detail) {
+  const fix = /ALLOWED_LOGINS/.test(detail) ? " The household's owner can add this email to the Worker's ALLOWED_LOGINS variable (Cloudflare: Workers & Pages → minty → Settings → Variables and Secrets)." : "";
+  return `Minty refused this sign-in: ${detail.replace(/^forbidden:\s*/, "")}${fix}`;
+}
+
 /** A message from the API in the banner (e.g. a rate limit); the next successful load clears it. */
 function notice(text) {
   const b = document.getElementById("banner");
@@ -363,7 +380,7 @@ function render(txns) {
   renderTotals(txns);
 
   const feed = document.getElementById("feed");
-  if (!txns.length) { feed.innerHTML = `<div class="empty">Nothing here yet. Link an account, or widen your filters.</div>`; return; }
+  if (!txns.length) { feed.innerHTML = `<div class="empty">${refused ? "No transactions: Minty refused this sign-in (see above)." : "Nothing here yet. Link an account, or widen your filters."}</div>`; return; }
 
   const groups = {};
   for (const t of txns) (groups[t.date] ??= []).push(t);
@@ -508,7 +525,7 @@ function detailHTML(t) {
 // --- The cards above the feed --------------------------------------------------------------
 // Unfiltered: each person's spending this month, from CFA's monthly totals (GET /audit/summary,
 // which the hourly cron keeps: transfers and card payments aren't spending), with a sparkline and
-// the pace against last month. A tap opens a chart by month and a donut by category. With a search
+// the pace against an average month this year. A tap opens a chart by month and a donut by category. With a search
 // or a filter on, they add up what's shown instead, and say so. charts.js draws them.
 let summary = null;                    // GET /audit/summary (null: not loaded, or no totals yet)
 let trendKey = null;                   // whose chart is open: a person's key, "" for everyone; null when closed
@@ -526,11 +543,20 @@ const catName = c => CAT[c] ?? titleCase(c);
 const monName = (m, opts = { month: "short", year: "numeric" }) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString(undefined, { ...opts, timeZone: "UTC" });
 const filtersOn = () => !!(state.q || state.start || state.end || state.tags.length || state.categories.length || state.banks.length || state.accounts.length || state.cards.length);
 
+let cardDays = null;                   // this month's spending by day, per person (GET /audit/daily split=owner): the cards' running totals
+let cardLastYear = null;               // the same month last year, the same way: the grey area behind them
+const lastYearOf = m => `${Number(m.slice(0, 4)) - 1}${m.slice(4, 7)}`;
 async function loadSummary() {
   if (offline) return;
   try { const r = await fetch("/audit/summary"); summary = r.ok ? await r.json() : null; } catch { summary = null; }
-  trendSig = "";
+  trendSig = ""; cardDays = cardLastYear = null;
   renderTotals(loaded);
+  if (!summary) return;
+  const ly = lastYearOf(summary.today.slice(0, 7)), lyEnd = new Date(Date.UTC(+ly.slice(0, 4), +ly.slice(5, 7), 0)).toISOString().slice(0, 10);
+  const daily = (from, to) => trendFetch(`/audit/daily?${new URLSearchParams({ from, to, split: "owner" })}`);
+  const [d, l] = await Promise.all([daily(`${summary.today.slice(0, 7)}-01`, summary.today),
+                                    summary.months.includes(ly) ? daily(`${ly}-01`, lyEnd) : null]);
+  if (d?.people) { cardDays = d.people; cardLastYear = l?.people ?? null; renderTotals(loaded); }
 }
 
 /** One person's (or, for "", everyone's) money in, spending and spending by category, by month. */
@@ -573,6 +599,7 @@ function renderLeftOutNote() {
 function renderTotals(txns) {
   const el = document.getElementById("totals"), C = window.MintyCharts;
   if (!C) { document.addEventListener("DOMContentLoaded", () => renderTotals(loaded), { once: true }); return; }
+  if (refused) { el.innerHTML = ""; document.getElementById("trends").hidden = true; return; }   // nothing to add up (the banner says why)
   renderLeftOutNote();
   txns = txns.filter(t => !leftOut(t));
   const present = [...new Set(txns.map(t => t.owner))];
@@ -607,15 +634,17 @@ function renderTotals(txns) {
   const lastMonth = monName(summary.months.at(-2), { month: "long" });
   el.innerHTML = keys.map(k => {
     const s = monthsOf(k), L = s.spend.length - 1, spent = s.spend[L], prev = s.spend[L - 1];
-    const pace = day >= 5 ? (spent / day) * dim : null;
-    const from = Math.max(s.first < 0 ? L : s.first, L - 11);
+    const pace = day >= 5 ? (spent / day) * dim : null, A = averageMonth(s, L);
+    const vs = pace !== null && A.avg > 0;
     return C.stat({
       label: `${k ? labelOf(k) : "Everyone"} · ${monName(cur, { month: "short" })}`, dot: k ? colorOf(k) : null, value: spent / 100, fmt: v => fmt0.format(v), cls: "spend",
-      // against last month only when it's a whole one (not the month the history starts in, usually partial)
-      delta: pace !== null && prev > 0 && L - 1 > s.first ? pace / prev - 1 : null, goodWhen: "down",
+      // the pace against an average month this year (only whole months: not the month the history starts in)
+      delta: vs ? pace / A.avg - 1 : null, goodWhen: "down",
       caption: `${pace !== null ? `On pace for ${money0(pace)}` : `${lastMonth}: ${money0(prev)}`} · in ${money0(s.income[L])}`,
-      trend: s.spend.slice(from).map(c => c / 100), labels: summary.months.slice(from).map((m, i, a) => `Spent in ${monName(m)}${i === a.length - 1 ? " so far" : ""}`),
-      tag: "button", attrs: `type="button" data-trend="${escapeAttr(k)}" aria-expanded="${trendKey === k}" title="${pace !== null && prev > 0 && L - 1 > s.first ? `On pace for ${money0(pace)} this month, against ${money0(prev)} in ${lastMonth}. ` : ""}Tap for the months and the categories"`,
+      // this month's running total by day against an average month this year (spent evenly), dashed,
+      // over the same month last year (grey)
+      pace: cardDays ? paceOf(k, s, L, day, dim, A) : null,
+      tag: "button", attrs: `type="button" data-trend="${escapeAttr(k)}" aria-expanded="${trendKey === k}" title="${vs ? `On pace for ${money0(pace)} this month, against an average month of ${money0(A.avg)} (${A.over}). ` : ""}Tap for the months and the categories"`,
       countUp: fresh,
     });
   }).join("");
@@ -624,6 +653,36 @@ function renderTotals(txns) {
   trendSig = sig;
 }
 const shortDate = d => new Date(`${d}T12:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+const kDollars = v => (v >= 1000 ? `$${Math.round(v / 100) / 10}k` : `$${Math.round(v)}`);
+/** The average month to hold this one against (cents, or null): this year's full months (in
+ * January, the last 12), from the stored monthly totals, and which months those were. */
+function averageMonth(s, L) {
+  const year = summary.today.slice(0, 4), first = Math.max(0, s.first), full = [...Array(L).keys()].filter(i => i >= first);
+  const ytd = full.filter(i => summary.months[i].startsWith(year)), use = ytd.length ? ytd : full.slice(-12);
+  const avg = use.length ? use.reduce((t, i) => t + s.spend[i], 0) / use.length : null;
+  const span = use.length ? (use.length === 1 ? monName(summary.months[use[0]]) : `${monName(summary.months[use[0]], { month: "short" })} – ${monName(summary.months[use.at(-1)])}`) : "";
+  return { avg, ytd: ytd.length > 0, over: span };
+}
+/** A card's running total this month, day by day to today, against the average month (A) and the
+ * same month last year, day by day (when the history covers it). */
+function paceOf(k, s, L, day, dim, A) {
+  const month = summary.today.slice(0, 7), year = month.slice(0, 4), ly = lastYearOf(month);
+  const running = (people, m, n) => {
+    const byDay = {};
+    for (const [owner, days] of Object.entries(people)) if (!k || owner === k) for (const [d, c] of Object.entries(days)) byDay[d] = (byDay[d] ?? 0) + c;
+    let run = 0;
+    return Array.from({ length: n }, (_, i) => (run += byDay[`${m}-${String(i + 1).padStart(2, "0")}`] ?? 0) / 100);
+  };
+  const days = running(cardDays, month, day);
+  const lyAt = summary.months.indexOf(ly), lyDim = new Date(Date.UTC(+ly.slice(0, 4), +ly.slice(5, 7), 0)).getUTCDate();
+  let last = cardLastYear && lyAt >= Math.max(0, s.first) && s.spend[lyAt] > 0 ? running(cardLastYear, ly, lyDim) : null;
+  if (last && last.length > dim) last = [...last.slice(0, dim - 1), last.at(-1)];    // a leap February against a short one
+  const avg = A.avg !== null ? A.avg / 100 : null;
+  const mon = monName(month, { month: "short" }), lyName = monName(ly);
+  return { days, dim, avg, avgLabel: avg !== null ? `avg ${kDollars(avg)}` : "", last, lastLabel: last ? `${mon} '${ly.slice(2, 4)}` : "",
+           title: avg !== null ? `${mon} vs ${A.ytd ? year : "12-mo"} avg` : `${mon} so far`,
+           labels: days.map((_, i) => `Spent by ${mon} ${i + 1}${last ? ` · ${lyName}: ${money0(last[Math.min(i, last.length - 1)] * 100)}` : ""}`) };
+}
 
 /** The open card's chart and donut. Counted: spending by month from the stored totals (6M, 1Y,
  * 2Y) or by day for the last 30 days (1M, GET /audit/daily), and by category. Left out (when
@@ -733,6 +792,10 @@ function renderTrends(fresh) {
     chartEl.innerHTML = "";
     trendChart = C.area(chartEl, {
       title: `${who} · ${left ? "left-out spending" : "spending"}`, ranges, range: rk, fmt: v => fmt0.format(v),
+      plotLabel: key => {
+        const n = ranges.find(x => x.key === key).points.length, what = left ? "Left-out spending" : "Spent";
+        return key === "1M" ? `${what} each day · last 30 days` : `${what} each month · ${n === 1 ? "this month" : `last ${n} months`}`;
+      },
       fmtAxis: v => (Math.abs(v) >= 1000 ? `$${Math.round(v / 100) / 10}k` : `$${Math.round(v)}`),
       head: (i, key) => {
         const pts = ranges.find(x => x.key === key).points;
@@ -1372,16 +1435,17 @@ const outIn = c => `${c < 0 ? "−" : "+"}${cents(c)}`;
 function setSumOpen(open) { selPanel.hidden = !open; selSumBtn.setAttribute("aria-expanded", open); if (open) { sumGrow = true; renderSelSummary(); } }
 // The Summary's breakdown chart: by one thing and split by another (reconcile.js breakdown, charts.js
 // barchart). Unset: by month when the selection spans months (else card, bank…), split by person when
-// it spans people, else by tag when it spans tags.
+// it spans people, else by tag when it spans tags. Card member only when some row has one (else it's Card).
 const sumBreak = { by: null, split: null, metric: "out", variant: null };
 let sumGrow = false;
-const BREAK = [["month", "Month"], ["year", "Year"], ["bank", "Bank"], ["card", "Card"], ["person", "Person"], ["tag", "Tag"]];
+const BREAK = [["month", "Month"], ["year", "Year"], ["bank", "Bank"], ["card", "Card"], ["member", "Card member"], ["person", "Person"], ["tag", "Tag"]];
 function breakdownHtml(rows) {
   const R = window.MintyReconcile, n = R.spread(rows);
+  if (!rows.some(t => t.account_owner)) n.member = 0;
   const byOpts = BREAK.filter(([k]) => n[k] > 1 || k === sumBreak.by);
   if (!byOpts.length) return "";
   let by = sumBreak.by && byOpts.some(([k]) => k === sumBreak.by) ? sumBreak.by : (["month", "card", "bank", "tag", "person", "year"].find(k => n[k] > 1) ?? byOpts[0][0]);
-  const splitOpts = [["none", "None"], ...BREAK.filter(([k]) => k !== by && n[k] > 1 && !(k === "year" && by === "month"))];
+  const splitOpts = [["none", "None"], ...BREAK.filter(([k]) => k !== by && n[k] > 1 && !(k === "year" && by === "month") && !(k === "card" && by === "member"))];
   let split = sumBreak.split && splitOpts.some(([k]) => k === sumBreak.split) ? sumBreak.split : (n.person > 1 && by !== "person" ? "person" : n.tag > 1 && by !== "tag" ? "tag" : "none");
   const seg = (ctl, opts, cur) => `<div class="segpill sp-seg" role="group" data-ctl="${ctl}">${opts.map(([k, l]) => `<button type="button" data-v="${k}" aria-pressed="${k === cur}">${l}</button>`).join("")}</div>`;
   const b = R.breakdown(rows, by, split, sumBreak.metric, { label: (kind, key, l) => (kind === "person" ? labelOf(l) : l) });
@@ -1398,12 +1462,19 @@ function breakdownHtml(rows) {
   </section>`;
 }
 let breakdownData = null;
+let sumOffBy = 0, offByTimer;                  // the Summary's "Off by", in cents
+document.getElementById("selPanel").addEventListener("input", e => {
+  if (e.target.id !== "spOffBy") return;
+  const v = Number(String(e.target.value).replace(/[$,\s]/g, ""));
+  clearTimeout(offByTimer);
+  offByTimer = setTimeout(() => { sumOffBy = Number.isFinite(v) && v > 0 ? Math.round(v * 100) : 0; renderSelSummary(); }, 300);
+});
 selSumBtn.addEventListener("click", () => setSumOpen(selPanel.hidden));
 function renderSelSummary() {
   const rows = loaded.filter(t => selected.has(t.id)), R = window.MintyReconcile;
   const sumEl = document.getElementById("selSum");
   if (!R || !rows.length) { sumEl.textContent = ""; selPanel.innerHTML = rows.length ? "" : `<p class="sp-more">Select some transactions to see their totals.</p>`; return; }
-  const s = R.summarize(rows), T = s.totals;
+  const s = R.summarize(rows, { offBy: sumOffBy }), T = s.totals;
   sumEl.innerHTML = `Out <b>${cents(T.out)}</b> (${T.outN}) · In <b>${cents(T.in)}</b> (${T.inN}) · Net <b>${outIn(T.net)}</b>`;
   if (selPanel.hidden) return;
   const name = t => escapeHtml(t.merchant_name || t.name || "—");
@@ -1412,7 +1483,8 @@ function renderSelSummary() {
   const where = t => escapeHtml([t.institution_name, t.account_name].filter(Boolean).join(" · "));
   const MAX = 40, more = n => (n > MAX ? `<div class="sp-more">and ${(n - MAX).toLocaleString()} more</div>` : "");
   sumGroups = {
-    refunds: s.refunds.flatMap(p => [p.charge.id, p.refund.id]), transfers: s.transfers.flatMap(p => [p.from.id, p.to.id]),
+    refunds: s.refunds.flatMap(p => [p.charge.id, p.refund.id]), lessFee: s.lessFee.flatMap(p => [p.charge.id, p.refund.id]),
+    chains: s.chains.flatMap(c => [c.charge.id, c.change.id, c.refund.id]), transfers: s.transfers.flatMap(p => [p.from.id, p.to.id]),
     partial: s.partial.flatMap(g => g.rows.map(t => t.id)), openCharges: s.openCharges.map(t => t.id), openCredits: s.openCredits.map(t => t.id),
     open: [...s.openCharges, ...s.openCredits, ...s.partial.flatMap(g => g.rows)].map(t => t.id),
   };
@@ -1432,6 +1504,21 @@ function renderSelSummary() {
   html += sec("Refunded, exactly", s.refunds.length ? `${s.refunds.length} pair${s.refunds.length === 1 ? "" : "s"} · ${cents(s.refunds.reduce((t, p) => t + p.cents, 0))}` : "", "refunds", s.refunds.length,
     `<ul class="sp-list">${s.refunds.slice(0, MAX).map(p => `<li><span class="m">${name(p.charge)}</span>${amt(p.charge)}<span class="d">${day(p.charge.date)}</span>→${amt(p.refund)}<span class="d">${day(p.refund.date)}</span><span class="r">${p.days} day${p.days === 1 ? "" : "s"} later</span></li>`).join("")}</ul>${more(s.refunds.length)}`,
     "A charge and a refund of the same amount from the same merchant, up to 120 days later.");
+  // Refunded less a fee: the household says how much (a cancellation or restocking fee), and a
+  // refund from the same merchant that came back exactly that much short pairs with its charge.
+  const offVal = sumOffBy ? (sumOffBy / 100).toFixed(2) : "";
+  html += `<section class="sp-sec"><h4>Refunded less a fee${s.lessFee.length ? ` <em>${s.lessFee.length} pair${s.lessFee.length === 1 ? "" : "s"} · ${cents(s.lessFee.reduce((t, p) => t + p.fee, 0))} kept</em>` : ""}${only("lessFee", s.lessFee.length)}</h4>
+    <p>A refund that came back short by a set amount, like a cancellation fee. <label class="sp-off">Off by $ <input id="spOffBy" type="text" inputmode="decimal" autocomplete="off" value="${escapeAttr(offVal)}" placeholder="25.00" maxlength="10" aria-label="How much the refund was short by"></label></p>
+    ${s.lessFee.length ? `<ul class="sp-list">${s.lessFee.slice(0, MAX).map(p => `<li><span class="m">${name(p.charge)}</span>${amt(p.charge)}<span class="d">${day(p.charge.date)}</span>→${amt(p.refund)}<span class="d">${day(p.refund.date)}</span><span class="r">${cents(p.fee)} kept · ${p.days} day${p.days === 1 ? "" : "s"} later</span></li>`).join("")}</ul>${more(s.lessFee.length)}`
+      : sumOffBy ? `<p>No refund in the selection is exactly ${cents(sumOffBy)} short of a charge from the same merchant.</p>` : ""}
+  </section>`;
+  // Changed, then refunded: an upgrade (another charge) or a downgrade (a partial refund), then a
+  // refund of the rest; with Off by, less that fee.
+  html += sec(`Changed, then refunded${sumOffBy ? ` less ${cents(sumOffBy)}` : ""}`, s.chains.length ? `${s.chains.length}` : "", "chains", s.chains.length,
+    `<ul class="sp-list">${s.chains.slice(0, MAX).map(c => `<li><span class="m">${name(c.charge)}</span>${amt(c.charge)}<span class="d">${day(c.charge.date)}</span>→
+      <span class="d">${c.kind === "upgrade" ? "upgrade" : "downgrade"}</span>${amt(c.change)}<span class="d">${day(c.change.date)}</span>→${amt(c.refund)}<span class="d">${day(c.refund.date)}</span>
+      <span class="r">${c.fee ? `${cents(c.fee)} kept` : "all back"} · ${c.days} day${c.days === 1 ? "" : "s"}</span></li>`).join("")}</ul>${more(s.chains.length)}`,
+    `A charge, then an upgrade (another charge) or a downgrade (part refunded), then a refund of the rest: all three add up to ${sumOffBy ? `the ${cents(sumOffBy)} kept (Off by)` : "nothing"}.`);
   html += sec("Moved between your accounts", s.transfers.length ? `${s.transfers.length} · ${cents(s.transfers.reduce((t, p) => t + p.cents, 0))}` : "", "transfers", s.transfers.length,
     `<ul class="sp-list">${s.transfers.slice(0, MAX).map(p => `<li><span class="m">${where(p.from)}</span>${amt(p.from)}<span class="d">${day(p.from.date)}</span>→<span class="m">${where(p.to)}</span>${amt(p.to)}<span class="r">${day(p.to.date)}</span></li>`).join("")}</ul>${more(s.transfers.length)}`,
     "The same amount out of one account and into another within 5 days, like a card payment. Both sides balance.");
@@ -1444,8 +1531,9 @@ function renderSelSummary() {
     `<ul class="sp-list">${s.openCredits.slice(0, MAX).map(t => `<li><span class="m">${name(t)}</span>${amt(t)}<span class="r">${day(t.date)} · ${where(t)}</span></li>`).join("")}</ul>${more(s.openCredits.length)}`,
     "Pay, interest, or a refund whose charge isn't selected (it may be older, or on another page).");
   if (sumGroups.open.length && sumGroups.open.length < rows.length) html += `<p class="sp-more"><button type="button" class="sellink" data-only="open">Select only what's not balanced</button> (${sumGroups.open.length.toLocaleString()}), then tag it with the bar.</p>`;
-  const top = selPanel.scrollTop;
+  const top = selPanel.scrollTop, typing = document.activeElement?.id === "spOffBy" ? document.activeElement.selectionStart : null;
   selPanel.innerHTML = html;
+  if (typing !== null) { const box = document.getElementById("spOffBy"); box.focus(); box.setSelectionRange(typing, typing); }   // keep typing
   // the breakdown's chart, and its switches' sliding thumbs
   const C = window.MintyCharts, chart = selPanel.querySelector(".sp-chart");
   selPanel.querySelectorAll(".sp-seg").forEach(g => C?.segpill(g));

@@ -17,7 +17,7 @@
   const days = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
 
   /** rows: the selected transactions. Returns totals, by person and account, and the groups. */
-  function summarize(rows, { refundDays = 120, transferDays = 5 } = {}) {
+  function summarize(rows, { refundDays = 120, transferDays = 5, offBy = 0 } = {}) {
     const all = rows.map(t => ({ t, cents: Math.round(Number(t.amount) * 100), key: merchantKey(t) })).filter(x => x.cents !== 0);
     const out = all.filter(x => x.cents > 0), inn = all.filter(x => x.cents < 0);
     const sum = xs => xs.reduce((s, x) => s + Math.abs(x.cents), 0);
@@ -58,6 +58,48 @@
       const c = closest(r, byAmount.get(-r.cents) ?? [], c => c.key === r.key && days(c.t.date, r.t.date) >= 0 && days(c.t.date, r.t.date) <= refundDays);
       if (c) { used.add(c); used.add(r); refunds.push({ charge: c.t, refund: r.t, cents: c.cents, days: days(c.t.date, r.t.date) }); }
     }
+    // 1b. Refunded less a set amount (offBy, in cents: a cancellation or restocking fee the
+    //     household typed in): a refund from the same merchant, up to refundDays after a charge,
+    //     exactly that much short of it.
+    const lessFee = [];
+    if (offBy > 0) {
+      for (const r of [...inn].sort((a, b) => (a.t.date < b.t.date ? -1 : 1))) {
+        if (used.has(r) || !r.key) continue;
+        const c = closest(r, byAmount.get(-r.cents + offBy) ?? [], c => c.key === r.key && days(c.t.date, r.t.date) >= 0 && days(c.t.date, r.t.date) <= refundDays);
+        if (c) { used.add(c); used.add(r); lessFee.push({ charge: c.t, refund: r.t, cents: c.cents, refunded: -r.cents, fee: offBy, days: days(c.t.date, r.t.date) }); }
+      }
+    }
+    // 1c. Changed, then refunded: an original charge, then a change at the same merchant (an
+    //     upgrade, another charge; or a downgrade, a partial refund), then a refund of the rest,
+    //     all within refundDays of the original, adding up to nothing (or, with offBy, to that fee
+    //     kept): $200 + $50 upgrade − $250, or $200 − $50 downgrade − $150.
+    const chains = [];
+    const byKey = new Map();
+    for (const x of all) if (!used.has(x) && x.key) (byKey.get(x.key) ?? byKey.set(x.key, []).get(x.key)).push(x);
+    for (const xs of byKey.values()) {
+      if (xs.length < 3 || xs.length > 80) continue;                         // a merchant's few rows (a big one isn't a booking)
+      xs.sort((a, b) => (a.t.date === b.t.date ? a.t.id - b.t.id : a.t.date < b.t.date ? -1 : 1));
+      for (let k = 2; k < xs.length; k++) {                                    // the final refund
+        const r = xs[k];
+        if (r.cents >= 0 || used.has(r)) continue;
+        let found = null;
+        for (let i = 0; i < k - 1 && !found; i++) {                            // the original charge
+          const a = xs[i];
+          if (a.cents <= 0 || used.has(a) || days(a.t.date, r.t.date) > refundDays) continue;
+          for (let j = i + 1; j < k; j++) {                                    // the change between them
+            const m = xs[j];
+            if (used.has(m) || a.cents + m.cents + r.cents !== offBy) continue;
+            if (m.cents < 0 && -m.cents >= a.cents) continue;                  // a downgrade refunds part, not all
+            found = { a, m, r }; break;
+          }
+        }
+        if (found) {
+          const { a, m, r: z } = found;
+          used.add(a); used.add(m); used.add(z);
+          chains.push({ charge: a.t, change: m.t, refund: z.t, kind: m.cents > 0 ? "upgrade" : "downgrade", fee: offBy, days: days(a.t.date, z.t.date) });
+        }
+      }
+    }
     // 2. A move between two of the household's accounts: the same amount out of one and into another,
     //    within transferDays, where both sides read like a payment or transfer (never pay).
     const transfers = [];
@@ -86,7 +128,7 @@
       totals,
       people: by(t => t.owner, t => t.owner),
       accounts: by(t => t.account_id, t => [t.institution_name, t.account_name].filter(Boolean).join(" · ") || "An account"),
-      refunds, transfers, partial, openCharges, openCredits,
+      refunds, lessFee, chains, transfers, partial, openCharges, openCredits,
       openOut: openCharges.reduce((s, t) => s + Math.round(t.amount * 100), 0),
       openIn: -openCredits.reduce((s, t) => s + Math.round(t.amount * 100), 0),
     };
@@ -110,6 +152,10 @@
     year: t => [[t.date.slice(0, 4), t.date.slice(0, 4)]],
     bank: t => [[`b:${t.item_id ?? t.institution_name ?? ""}`, t.institution_name || "A bank"]],
     card: t => [[`a:${t.account_id}`, `${[t.institution_name, t.account_name].filter(Boolean).join(" · ") || "An account"}${t.account_mask ? ` ••${t.account_mask}` : ""}`]],
+    // as card, with a multi-card account split by card member (Plaid's account_owner: employee or
+    // authorized-user cards); a transaction without one (usually the main card) stays the account's
+    member: t => (t.account_owner ? [[`m:${t.account_id}:${t.account_owner.trim().toLowerCase()}`,
+      `${t.account_owner.trim()} · ${t.account_name || "A card"}${t.account_mask ? ` ••${t.account_mask}` : ""}`]] : DIMS.card(t)),
     person: t => [[`p:${t.owner}`, t.owner]],
     tag: t => (t.tags?.length ? [...new Map(t.tags.map(x => [x.toLowerCase(), x])).entries()].map(([k, l]) => [`t:${k}`, l]) : [["t:", "No tag"]]),
   };
